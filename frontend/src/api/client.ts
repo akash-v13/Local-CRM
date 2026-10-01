@@ -16,8 +16,17 @@ import type {
   ConnectorTestResult,
   Credential,
   CredentialWrite,
+  CostProjection,
   Message,
   MessageCreateInput,
+  ModelOption,
+  ReplyTemplate,
+  ReplyTemplateWrite,
+  SampleCase,
+  SampleCaseWrite,
+  TestRun,
+  TestRunCreate,
+  TestRunEstimate,
   Queue,
   QueueInput,
   QueueReport,
@@ -160,6 +169,33 @@ export const api = {
     put<Credential>(`/tenants/${tenantId}/credentials/${id}`, input),
   testCredential: (tenantId: string, id: string) =>
     post<TokenTestResult>(`/tenants/${tenantId}/credentials/${id}/test`, {}),
+
+  // AI reply drafting
+  aiModels: () => request<ModelOption[]>("/ai/models"),
+  draftReply: (tenantId: string, caseNumber: number, actorId: string) =>
+    post<Message>(`/tenants/${tenantId}/cases/${caseNumber}/drafts`, { actor_id: actorId }),
+  listReplyTemplates: (tenantId: string) =>
+    request<ReplyTemplate[]>(`/tenants/${tenantId}/reply-templates`),
+  getReplyTemplate: (tenantId: string, id: string) =>
+    request<ReplyTemplate>(`/tenants/${tenantId}/reply-templates/${id}`),
+  createReplyTemplate: (tenantId: string, input: ReplyTemplateWrite, actorId: string) =>
+    post<ReplyTemplate>(`/tenants/${tenantId}/reply-templates?actor_id=${encodeURIComponent(actorId)}`, input),
+  updateReplyTemplate: (tenantId: string, id: string, input: ReplyTemplateWrite, actorId: string) =>
+    put<ReplyTemplate>(`/tenants/${tenantId}/reply-templates/${id}?actor_id=${encodeURIComponent(actorId)}`, input),
+  costProjection: (tenantId: string, id: string, monthlyVolume: number) =>
+    request<CostProjection>(`/tenants/${tenantId}/reply-templates/${id}/projection?monthly_volume=${monthlyVolume}`),
+  listSampleCases: (tenantId: string) => request<SampleCase[]>(`/tenants/${tenantId}/sample-cases`),
+  createSampleCase: (tenantId: string, input: SampleCaseWrite) =>
+    post<SampleCase>(`/tenants/${tenantId}/sample-cases`, input),
+  updateSampleCase: (tenantId: string, id: string, input: SampleCaseWrite) =>
+    put<SampleCase>(`/tenants/${tenantId}/sample-cases/${id}`, input),
+  estimateTest: (tenantId: string, input: TestRunCreate) =>
+    post<TestRunEstimate>(`/tenants/${tenantId}/template-tests/estimate`, input),
+  startTest: (tenantId: string, input: TestRunCreate) =>
+    post<TestRun>(`/tenants/${tenantId}/template-tests`, input),
+  getTest: (tenantId: string, id: string) => request<TestRun>(`/tenants/${tenantId}/template-tests/${id}`),
+  recentTests: (tenantId: string, templateId: string) =>
+    request<TestRun[]>(`/tenants/${tenantId}/template-tests?template_id=${templateId}`),
 };
 
 export type Api = typeof api;

@@ -144,6 +144,8 @@ export interface MessageCreateInput {
   body: string;
   author_id?: string;
   then_status?: CaseStatus;
+  /** The AI draft this reply started from (records whether it was edited). */
+  from_draft_id?: string;
 }
 
 export interface TransitionInput {
@@ -360,4 +362,176 @@ export interface TokenTestResult {
   error: string | null;
   token_preview: string | null;
   expires_at: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// AI reply drafting — backend/app/schemas.py
+// ---------------------------------------------------------------------------
+
+export type ModelId = "claude-haiku-4-5" | "claude-sonnet-5" | "claude-opus-5";
+export type EffortLevel = "low" | "medium" | "high";
+
+export interface ModelOption {
+  id: ModelId;
+  label: string;
+  summary: string;
+  input_per_mtok: number;
+  output_per_mtok: number;
+  supports_effort: boolean;
+}
+
+export interface TemplateContent {
+  model: ModelId;
+  effort: EffortLevel;
+  instructions: string;
+  rules: string[];
+  example_reply: string | null;
+  max_words: number | null;
+  must_include: string[];
+  must_not_include: string[];
+}
+
+export interface ReplyTemplateWrite extends TemplateContent {
+  name: string;
+  description: string | null;
+  priority: number;
+  is_active: boolean;
+  match_criteria: MatchCriteria;
+}
+
+export interface TemplateVersion extends TemplateContent {
+  version: number;
+  created_at: string;
+  created_by: string | null;
+}
+
+export interface ReplyTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  priority: number;
+  is_active: boolean;
+  match_criteria: MatchCriteria;
+  current_version: number;
+  current: TemplateVersion;
+  versions: TemplateVersion[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SampleCaseWrite {
+  name: string;
+  channel: "webform" | "email" | "chat" | "api";
+  category: CategorySelection | null;
+  customer_name: string | null;
+  customer_tier: string | null;
+  queue_name: string | null;
+  facts: Record<string, unknown>;
+  message: string;
+}
+
+export interface SampleCase extends SampleCaseWrite {
+  id: string;
+  created_at: string;
+}
+
+export interface CheckResult {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+/** Stored on AI draft messages as `ai`. */
+export interface DraftInfo {
+  model: ModelId;
+  served_by: string;
+  template_id: string | null;
+  template_name: string;
+  template_version: number | null;
+  reply: string;
+  facts_used: string[];
+  needs_attention: boolean;
+  attention_reason: string;
+  checks: CheckResult[];
+  warnings: string[];
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cost_usd: number;
+  latency_ms: number;
+}
+
+export interface TestRunCreate {
+  template_id: string | null;
+  template: ReplyTemplateWrite;
+  models: ModelId[];
+  sample_ids: string[];
+  case_numbers: number[];
+  runs_per_input: number;
+  actor_id?: string;
+}
+
+export interface TestRunEstimate {
+  total_calls: number;
+  estimated_cost_usd: number;
+  per_model: Record<string, number>;
+}
+
+export interface TestResult {
+  input_ref: string;
+  input_label: string;
+  model: ModelId;
+  run: number;
+  ok: boolean;
+  error: string | null;
+  draft: DraftInfo | null;
+}
+
+export interface ModelSummary {
+  model: ModelId;
+  label: string;
+  drafts: number;
+  errors: number;
+  checks_passed_pct: number | null;
+  consistency: number | null;
+  needs_attention: number;
+  avg_words: number | null;
+  avg_cost_usd: number | null;
+  avg_latency_ms: number | null;
+  total_cost_usd: number;
+}
+
+export interface TestRun {
+  id: string;
+  template_id: string | null;
+  template_version: number | null;
+  status: "pending" | "running" | "done" | "failed";
+  total_calls: number;
+  completed_calls: number;
+  estimated_cost_usd: number;
+  actual_cost_usd: number;
+  error: string | null;
+  config: Record<string, unknown>;
+  results: TestResult[];
+  summary: ModelSummary[];
+  created_at: string;
+  created_by: string | null;
+}
+
+export interface CostProjectionRow {
+  model: ModelId;
+  label: string;
+  source: "measured" | "estimated";
+  sample_size: number;
+  avg_input_tokens: number;
+  avg_output_tokens: number;
+  cost_per_reply_usd: number;
+  cost_per_1000_usd: number;
+  monthly_cost_usd: number;
+}
+
+export interface CostProjection {
+  monthly_volume: number;
+  rows: CostProjectionRow[];
+  notes: string[];
 }

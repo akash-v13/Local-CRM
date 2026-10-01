@@ -11,6 +11,8 @@ React 19 + TypeScript, built with Vite. Two areas:
 | `/ops/queues` | **Operations Portal: queues** in routing order; activate/deactivate. |
 | `/ops/queues/new`, `/ops/queues/:id` | **Queue editor**: name, priority, match conditions, handling settings, live routing test. |
 | `/ops/connectors`, `/ops/connectors/new`, `/ops/connectors/:id` | **Connectors**: API calls that enrich cases. The editor is laid out as steps: Basics → Request → Authentication → Test & pick fields → Fields to keep → When to run → Order & reliability. |
+| `/ops/templates`, `/ops/templates/new`, `/ops/templates/:id` | **Reply templates**: when to use, model, instructions, rules, checks, plus **test lab**, **cost projection** and **version history**. |
+| `/ops/samples`, `/ops/samples/new`, `/ops/samples/:id` | **Sample cases**: test inputs for the test lab. |
 | `/ops/credentials`, `/ops/credentials/new`, `/ops/credentials/:id` | **Credentials**: API key, bearer, basic, OAuth 2.0 client credentials, custom token request. Secrets are write-only; token types have "Generate token now". |
 
 ## Everyday commands
@@ -71,7 +73,10 @@ src/
 │   ├── TemplateField     Code-style input with an "Insert field…" placeholder menu
 │   ├── KeyValueEditor    Header / named-secret rows
 │   ├── JsonTree          API response with a "Keep" button on every value
-│   └── EnrichmentCard    Connector results on the case page + "Re-run enrichment"
+│   ├── EnrichmentCard    Connector results on the case page + "Re-run enrichment"
+│   ├── DraftPanel        AI draft details in the reply box (template, cost, checks, warnings)
+│   ├── TemplateTestLab   Run a template on models × inputs; compare quality, consistency, cost
+│   └── CostProjectionPanel  Per-reply and monthly cost per model
 ├── pages/                One file per route
 │   └── ops/              Operations Portal pages (layout, dashboard, queue list, queue editor)
 └── test/                 Test setup and fixtures

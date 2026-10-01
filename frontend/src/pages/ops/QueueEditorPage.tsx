@@ -74,7 +74,8 @@ export function QueueEditorPage() {
   if (!tenantId) return null;
   if (existing.error) return <p className="error">{existing.error}</p>;
   if (!fields.data || (!isNew && !existing.data)) return <p className="muted">Loading…</p>;
-  const routingFields = fields.data;
+  // "Queue" is only meaningful after routing (e.g. for reply templates), not for choosing one.
+  const routingFields = { ...fields.data, fields: fields.data.fields.filter((f) => f.key !== "queue.name") };
 
   /** The form as an API payload, or null (and problems shown) if it isn't valid yet. */
   function buildDraft(): QueueInput | null {

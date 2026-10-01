@@ -178,7 +178,34 @@ sequenceDiagram
 
 **Re-running enrichment** on a case that's already been routed refreshes its data but doesn't move it. Use "Run routing again" for that.
 
-## 11. API endpoints
+## 11. AI reply drafting
+
+```mermaid
+flowchart LR
+    Case[Case or sample] --> Input["DraftInput<br/>facts + customer-visible thread"]
+    Input --> Mask["Mask PII<br/>names, emails, phones, cards"]
+    Template["Reply template<br/>(first match, current version)"] --> Prompt
+    Mask --> Prompt["Prompt<br/>system: rules + template (cached)<br/>user: facts + conversation"]
+    Prompt --> Claude["Claude<br/>structured output"]
+    Claude --> Unmask["Unmask"] --> Checks["Checks + warnings<br/>max words, must/mustn't say,<br/>invented contact details"]
+    Checks --> Draft[Draft on the case<br/>agent reviews and sends]
+```
+
+| Piece | Where | Notes |
+|---|---|---|
+| Models & prices | `app/ai/models.py` | Haiku 4.5, Sonnet 5 (default), Opus 5 with list prices. **Every cost in the app comes from this table**; update it if prices change. Haiku has no `effort`; Opus gets server-side refusal fallback. |
+| Masking | `app/ai/pii.py` | Known name/email plus email, phone (9-15 digits, not dates) and card patterns → placeholders, restored after. `unexpected_pii` flags contact details the model invented. |
+| Prompt | `app/ai/prompts.py` | Core rules for every template (facts only, no compensation unless decided, customer text is untrusted, plain text), then the template. Internal notes and earlier drafts are never sent. |
+| Model call | `app/ai/drafter.py` | `client.beta.messages.parse(output_format=DraftOutput)`, system prompt cached, typed errors → readable messages, refusal/truncation handled. `DraftWriter` is the seam tests replace with a fake. |
+| Checks & consistency | `app/ai/checks.py` | Template checks (max words, must/mustn't include) and consistency (mean pairwise similarity of repeated drafts). |
+| Templates | `services/replies.py` | First active template by priority whose conditions match (fields include **Queue**). Content changes create an immutable new version; drafts record template + version. |
+| Drafts on cases | `DraftService` | Allowed only if the case's queue has "Allow AI to draft replies". Saved as a `draft` message by `ai`; event `ai.draft_created`. When an agent sends with `from_draft_id`, `message.sent` records `draftEdited`. |
+| Test lab | `services/template_tests.py` | Templates as edited × models × inputs (samples and/or real cases) × runs, executed by the worker (job `template_test`, 4 in parallel), results saved as they complete. Free cost estimate before running. |
+| Cost projection | `ReplyTemplateService.projection` | Per model: measured (real drafts + test runs, includes caching) or estimated; per reply, per 1,000, per month. |
+
+**Configuration:** `ANTHROPIC_API_KEY` (backend and worker). Without it drafting is off and every AI action says how to enable it.
+
+## 12. API endpoints
 
 Full, always-current reference: http://localhost:8000/docs.
 
@@ -208,6 +235,14 @@ Full, always-current reference: http://localhost:8000/docs.
 | GET, POST | `/tenants/{t}/credentials` | List / create credentials (secrets write-only) |
 | GET, PUT | `/tenants/{t}/credentials/{id}` | Read / replace (omit `secrets` to keep them; drops cached token) |
 | POST | `/tenants/{t}/credentials/{id}/test` | Generate a token now (token types) or check secrets |
+| GET | `/ai/models` | Models a template can use, with prices |
+| POST | `/tenants/{t}/cases/{c}/drafts` | Draft a reply with the matching template (saved as a draft, never sent) |
+| GET, POST | `/tenants/{t}/reply-templates` | List / create templates |
+| GET, PUT | `/tenants/{t}/reply-templates/{id}` | Read (with versions) / update (content change → new version) |
+| GET | `/tenants/{t}/reply-templates/{id}/projection?monthly_volume=` | Cost per reply / 1,000 / month per model |
+| GET, POST, PUT | `/tenants/{t}/sample-cases[/{id}]` | Test-lab inputs |
+| POST | `/tenants/{t}/template-tests/estimate` | Cost of a test run before running it (free) |
+| POST, GET | `/tenants/{t}/template-tests[/{id}]` | Start a test run (worker) / read progress and results |
 
 ### Message rules (`CaseService.add_message`)
 

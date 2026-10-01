@@ -43,6 +43,7 @@ app/
 ├── connectors/       Calling external APIs: runner (one request), auth (credentials,
 │                     token cache), context (what templates can see)
 ├── security/         SSRF protection, secret encryption
+├── ai/               Reply drafting: models & prices, PII masking, prompts, Claude call, checks
 ├── worker.py         Background worker: `uv run python -m app.worker`
 ├── repositories.py   The ONLY code that queries the database
 ├── domain/           Pure business rules — no DB, no HTTP

@@ -113,6 +113,25 @@ docker-compose runs a fake shop/shipping API at `http://mocks:8100` (docs: http:
 
 Failure testing: order numbers containing `404`, `500` or `SLOW` make the mock API fail or time out.
 
+### Try AI reply drafting
+
+AI drafting calls the Anthropic API, so it needs a key (from https://console.anthropic.com). It costs real money, but little: a typical draft costs well under one cent on Haiku or Sonnet.
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...      # in the shell you run docker compose from
+docker compose up -d                     # recreates api + worker with the key
+docker compose logs worker | grep "AI drafting on"
+```
+
+(Running outside Docker: put `ANTHROPIC_API_KEY=...` in `backend/.env`.)
+
+1. **Operations → Queues & routing → General** (or any queue): tick **Allow AI to draft replies**, save.
+2. **Operations → Reply templates**: every business starts with "Default reply". Create e.g. "Late delivery apology" for *Category is Delivery*, pick a model, write instructions, rules and checks.
+3. **Operations → Sample cases**: add a few realistic messages with facts (e.g. `daysLate = 6`).
+4. In the template's **Test lab**: choose models (e.g. Haiku and Sonnet), samples, 2-3 runs each. The cost estimate shows before you run. **Run test** compares models on checks passed, consistency, length, speed and cost per reply, with replies side by side.
+5. **Cost projection** shows per-reply and monthly cost for each model at your volume, measured from your tests.
+6. On a case: **✨ Draft with AI** fills the reply box with a draft (plus template/version, cost, warnings and checks). Edit and send; whether you edited it is recorded.
+
 ## Try it with the API directly
 
 In the interactive docs (http://localhost:8000/docs), or with curl:

@@ -9,9 +9,10 @@ import { ReplyComposer } from "./ReplyComposer";
 // Replace real network calls with spies; everything else in the module stays real.
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
-  return { ...actual, api: { ...actual.api, addMessage: vi.fn() } };
+  return { ...actual, api: { ...actual.api, addMessage: vi.fn(), draftReply: vi.fn() } };
 });
 const addMessage = vi.mocked(api.addMessage);
+const draftReply = vi.mocked(api.draftReply);
 
 describe("ReplyComposer", () => {
   beforeEach(() => {
@@ -99,5 +100,67 @@ describe("ReplyComposer", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Case is closed.");
     expect(screen.getByLabelText("Message")).toHaveValue("Hello");
+  });
+});
+
+describe("ReplyComposer: Draft with AI", () => {
+  beforeEach(() => {
+    addMessage.mockReset();
+    addMessage.mockResolvedValue({} as never);
+    draftReply.mockReset();
+    draftReply.mockResolvedValue({
+      id: "draft-1",
+      body: "Hi John, we're sorry your parcel was late.",
+      ai: {
+        model: "claude-sonnet-5",
+        served_by: "claude-sonnet-5",
+        template_name: "Late delivery",
+        template_version: 3,
+        reply: "Hi John, we're sorry your parcel was late.",
+        facts_used: ["6 days late"],
+        needs_attention: true,
+        attention_reason: "Customer mentions a lawyer",
+        checks: [{ name: "must_include", passed: true, detail: 'Mentions "sorry"' }],
+        warnings: ["Fill in before sending: [ORDER_ID]"],
+        cost_usd: 0.0021,
+        latency_ms: 2300,
+      },
+    } as never);
+  });
+
+  it("fills the reply box with the draft and explains it", async () => {
+    const user = userEvent.setup();
+    const onSent = vi.fn();
+    render(<ReplyComposer caseDetail={makeCase()} agentId="agent.alex" onSent={onSent} />);
+
+    await user.click(screen.getByRole("button", { name: "✨ Draft with AI" }));
+    expect(draftReply).toHaveBeenCalledWith("tenant-1", makeCase().case_number, "agent.alex");
+    expect(await screen.findByLabelText("Message")).toHaveValue("Hi John, we're sorry your parcel was late.");
+    expect(screen.getByText(/Late delivery v3 · Claude Sonnet 5 · \$0\.0021/)).toBeInTheDocument();
+    expect(screen.getByText("Customer mentions a lawyer")).toBeInTheDocument();
+    expect(screen.getByText("Fill in before sending: [ORDER_ID]")).toBeInTheDocument();
+    expect(screen.getByText(/Mentions "sorry"/)).toBeInTheDocument();
+    expect(onSent).toHaveBeenCalled(); // history refreshes to show the saved draft
+  });
+
+  it("sends with the draft id and marks edits", async () => {
+    const user = userEvent.setup();
+    render(<ReplyComposer caseDetail={makeCase()} agentId="a" onSent={() => {}} />);
+    await user.click(screen.getByRole("button", { name: "✨ Draft with AI" }));
+    const box = await screen.findByLabelText("Message");
+    await user.type(box, " Thanks!");
+    expect(screen.getByText("edited")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(addMessage).toHaveBeenCalled());
+    expect(addMessage.mock.calls[0][2]).toMatchObject({ kind: "agent_reply", from_draft_id: "draft-1" });
+  });
+
+  it("shows why drafting isn't available", async () => {
+    draftReply.mockRejectedValueOnce(new ApiError(409, "AI drafting is turned off for the 'General' queue."));
+    const user = userEvent.setup();
+    render(<ReplyComposer caseDetail={makeCase()} agentId="a" onSent={() => {}} />);
+    await user.click(screen.getByRole("button", { name: "✨ Draft with AI" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("turned off for the 'General' queue");
   });
 });

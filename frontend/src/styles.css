@@ -1336,3 +1336,199 @@ textarea.code {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---------- AI drafting ---------- */
+
+.button.ai {
+  background: var(--surface);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.button.ai:hover {
+  background: var(--accent-soft);
+}
+.actions .spacer {
+  flex: 1;
+}
+.composer .actions {
+  justify-content: flex-start;
+}
+.draft-panel {
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+.draft-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.draft-panel-head .button {
+  margin-left: auto;
+}
+.draft-panel p {
+  margin: 0;
+}
+.draft-alert {
+  border-left: 3px solid #fab219;
+  padding-left: 0.5rem;
+}
+.check-badges {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+}
+.check-badges li {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  background: var(--surface);
+}
+.check-badges li.fail {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.message[data-direction="internal"]:has(.tag-ai) {
+  background: var(--surface);
+  border-style: dashed;
+  border-color: var(--accent);
+}
+.tag-ai {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Template test lab & cost projection */
+.lab-card {
+  margin-top: 1rem;
+}
+.test-lab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.lab-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+.lab-controls fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem 0.75rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: flex-start;
+}
+.lab-controls legend {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0 0.3rem;
+}
+.lab-controls select {
+  width: 100%;
+}
+.lab-run {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.compare-table th[scope="row"] {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: var(--surface);
+  white-space: nowrap;
+}
+.lab-subtitle {
+  font-size: 0.95rem;
+  margin: 0.5rem 0 0;
+}
+.lab-input {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+}
+.lab-input > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.lab-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+}
+.lab-column h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+}
+.lab-reply {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.88rem;
+}
+.lab-reply .message-body {
+  margin: 0.3rem 0;
+}
+.cost-projection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+.cost-projection .table-wrap {
+  width: 100%;
+}
+.cost-projection input {
+  width: 9rem;
+}
+.notes {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+.versions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.versions summary {
+  cursor: pointer;
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Row headers (first cell of a body row) read as body text, never as column headers. */
+.table tbody th[scope="row"] {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+}
