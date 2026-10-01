@@ -77,6 +77,49 @@ npm install
 npm run dev                                  # http://localhost:5173
 ```
 
+## Turn on AI drafting (Anthropic API key)
+
+Everything except AI drafting works without a key. To turn AI drafting on:
+
+1. **Get a key.** Sign in at https://console.anthropic.com, add credit under **Billing**, then create a key under **Settings → API keys**. It starts with `sk-ant-`. Copy it now, because it's only shown once.
+2. **Put it in `.env`** in the project root (next to `docker-compose.yml`):
+
+   ```bash
+   cp .env.example .env
+   # then edit .env so it reads:
+   ANTHROPIC_API_KEY=sk-ant-...
+   ```
+
+   `.env` is git-ignored. **Never** put the key in code, `docker-compose.yml`, a committed file, or a chat or ticket.
+3. **Restart the API and worker** so they read the key:
+
+   ```bash
+   docker compose up -d
+   ```
+
+4. **Check it worked:**
+
+   ```bash
+   docker compose logs worker | grep "AI drafting"
+   # → worker started (AI drafting on)
+   ```
+
+   In the app, **✨ Draft with AI** on a case now writes a draft. That only happens if the case's queue has **Allow AI to draft replies** ticked (Operations → Queues & routing).
+
+**Running the backend outside Docker (option C)?** Put the same `ANTHROPIC_API_KEY=` line in `backend/.env` instead (copy `backend/.env.example`).
+
+**Cost:** a typical draft costs under one cent (see [costs in the main README](../../README.md#ai-costs)). To limit spending, set a monthly limit for the key in the Anthropic Console.
+
+**If it doesn't work:**
+
+| Symptom | Fix |
+|---|---|
+| "AI drafting isn't set up: add ANTHROPIC_API_KEY…" | The key isn't loaded. Check `.env` is in the project root, then run `docker compose up -d` again. |
+| "The Anthropic API key was rejected" | Typo or revoked key: create a new one. |
+| "The Anthropic API rejected the request: … credit balance …" | Add credit under **Billing** in the Console. |
+| "Rate limited by the Anthropic API" | Wait a minute; new accounts have low limits that rise with usage. |
+| "AI drafting is turned off for the 'X' queue" | Tick **Allow AI to draft replies** on that queue. |
+
 ## Try it in the UI
 
 1. Open http://localhost:5173. If there's no tenant yet, type a business name in the top bar and click **Create**.
@@ -115,21 +158,7 @@ Failure testing: order numbers containing `404`, `500` or `SLOW` make the mock A
 
 ### Try AI reply drafting
 
-AI drafting calls the Anthropic API, so it needs a key (from https://console.anthropic.com). It costs real money, but little: a typical draft costs well under one cent on Haiku or Sonnet.
-
-Put the key in a `.env` file in the project root (next to `docker-compose.yml`). Docker Compose reads it automatically, and it's git-ignored:
-
-```bash
-# .env
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-```bash
-docker compose up -d                     # recreates api + worker with the key
-docker compose logs worker | grep "AI drafting on"
-```
-
-Running the backend outside Docker? Put the same line in `backend/.env` instead. Never put the key in code, `docker-compose.yml`, or anything committed.
+First add your Anthropic API key: see [Turn on AI drafting](#turn-on-ai-drafting-anthropic-api-key) above. Then:
 
 1. **Operations → Queues & routing → General** (or any queue): tick **Allow AI to draft replies**, pick the model and effort, save.
 2. **Operations → Prompt templates**: every business starts with a starter pack: a baseline (`base.jinja`), a default persona and case-type templates. Edit the baseline for your tone, add a persona for a queue (`queue/General.jinja`) or a template for a category (`category/Complaint_Delivery_LateDelivery.jinja`); **New template** picks the right name for you and starts from the template it replaces.

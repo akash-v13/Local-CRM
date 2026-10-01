@@ -10,7 +10,7 @@ This README is the **one place to start**. It explains what the product does and
 
 1. [Status](#1-status)
 2. [How a case flows](#2-how-a-case-flows)
-3. [Features](#3-features)
+3. [Features](#3-features) (incl. [AI costs](#ai-costs))
 4. [Architecture](#4-architecture)
 5. [Quick start](#5-quick-start)
 6. [Developing](#6-developing)
@@ -88,6 +88,32 @@ Each draft is built from **Jinja templates in layers**. If two layers conflict, 
 Personal data is masked before the prompt is built and restored afterwards. Each draft is checked for word limits, required and banned phrases, and invented contact details, and an agent always reviews it before it's sent. Managers can preview the exact prompt for any case for free, compare Haiku / Sonnet / Opus in the **test lab** (quality, consistency, speed, cost), and see **monthly cost projections**.
 → [Template author guide](backend/app/ai/templates/README.md) · [Codebase guide §11](docs/dev/codebase-guide.md#11-ai-reply-drafting) · [Try it](docs/dev/local-setup.md)
 
+### AI costs
+
+Prices per million tokens (input / output): **Haiku 4.5** $1 / $5, **Sonnet 5** $2 / $10, **Opus 5** $5 / $25. Every cost in the app is calculated from the table in `backend/app/ai/models.py`.
+
+A typical draft with the starter templates uses about **2,000 input tokens and 350 output tokens**:
+
+| Model | Per reply | Per 1,000 replies | 10,000 replies / month |
+|---|---|---|---|
+| Haiku 4.5 | ~$0.004 | ~$4 | ~$38 |
+| **Sonnet 5 (default)** | **~$0.0075** | **~$7.50** | **~$75** |
+| Opus 5 | ~$0.019 | ~$19 | ~$190 |
+
+**Measured live (1 Oct 2026, starter templates):**
+
+| Test | Model | Cost per reply | Time | Result |
+|---|---|---|---|---|
+| Late-delivery case with a prompt-injection attempt | Sonnet 5 | $0.0077 | 6.3s | Passed every check, refused to promise a refund, flagged for an agent |
+| Missing-parcel sample, 2 runs | Sonnet 5 | $0.0075 | 4.4s | Passed every check, flagged the refund demand both times |
+| Missing-parcel sample, 2 runs | Haiku 4.5 | $0.0026 | 5.3s | Passed the automated checks, but invented a "2 business days" timeline and hinted at a refund |
+
+Notes:
+- **Sonnet 5 is the default.** Haiku is about 3× cheaper but followed the rules less reliably in testing. Compare models on your own cases in a template's **test lab** before switching a queue.
+- The in-app **cost projection** uses measured usage once drafts or test runs exist. Before that it's an estimate, which ran about 30% low in testing.
+- Prompt caching is set up but isn't reducing costs yet: the cached part of the prompt is probably below the minimum cacheable length.
+- A test-lab run shows its estimated cost before you start it. The run above (4 drafts) cost $0.02.
+
 ### Operations Portal
 This is for managers. It has a dashboard (open cases, a queue × status table) and the editors for queues, connectors, credentials, prompt templates and sample cases.
 
@@ -146,12 +172,14 @@ docker compose up --build
 - App: **http://localhost:5173** (agent console, test webform, Operations Portal)
 - API docs: **http://localhost:8000/docs**
 
-To turn on AI drafting, put your key in a `.env` file in the project root. The file is git-ignored, so never put the key anywhere else:
+**To turn on AI drafting** you need an Anthropic API key (from https://console.anthropic.com → Settings → API keys):
 
 ```bash
-echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
-docker compose up -d
+cp .env.example .env          # then set ANTHROPIC_API_KEY=sk-ant-... in .env
+docker compose up -d          # restart so the API and worker read it
 ```
+
+`.env` is git-ignored. Never put the key anywhere else. Then tick **Allow AI to draft replies** on a queue. Step-by-step instructions and troubleshooting: [Turn on AI drafting](docs/dev/local-setup.md#turn-on-ai-drafting-anthropic-api-key).
 
 For a walkthrough (creating a business, sending a case, setting up a connector, testing templates) and for running without Docker, see [docs/dev/local-setup.md](docs/dev/local-setup.md).
 
