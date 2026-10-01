@@ -117,13 +117,19 @@ Failure testing: order numbers containing `404`, `500` or `SLOW` make the mock A
 
 AI drafting calls the Anthropic API, so it needs a key (from https://console.anthropic.com). It costs real money, but little: a typical draft costs well under one cent on Haiku or Sonnet.
 
+Put the key in a `.env` file in the project root (next to `docker-compose.yml`). Docker Compose reads it automatically, and it's git-ignored:
+
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...      # in the shell you run docker compose from
+# .env
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+```bash
 docker compose up -d                     # recreates api + worker with the key
 docker compose logs worker | grep "AI drafting on"
 ```
 
-(Running outside Docker: put `ANTHROPIC_API_KEY=...` in `backend/.env`.)
+Running the backend outside Docker? Put the same line in `backend/.env` instead. Never put the key in code, `docker-compose.yml`, or anything committed.
 
 1. **Operations → Queues & routing → General** (or any queue): tick **Allow AI to draft replies**, save.
 2. **Operations → Reply templates**: every business starts with "Default reply". Create e.g. "Late delivery apology" for *Category is Delivery*, pick a model, write instructions, rules and checks.
