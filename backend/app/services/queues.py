@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.errors import NotFoundError
 from app.domain.routing import (
+    ENRICHMENT_PREFIX,
     FIELDS,
     LIST_OPERATORS,
     OPERATORS,
@@ -19,6 +20,7 @@ from app.models import Queue
 from app.models.base import utcnow
 from app.repositories import (
     CaseRepository,
+    ConnectorRepository,
     CustomerRepository,
     MessageRepository,
     QueueRepository,
@@ -47,6 +49,7 @@ class QueueService:
         self.queues = QueueRepository(session)
         self.cases = CaseRepository(session)
         self.customers = CustomerRepository(session)
+        self.connectors = ConnectorRepository(session)
         self.messages = MessageRepository(session)
 
     def _require_tenant(self, tenant_id: uuid.UUID) -> None:
@@ -170,11 +173,21 @@ class QueueService:
             "customer.tier": self.customers.distinct_tiers(tenant_id),
             "message": [],
         }
+        enrichment_fields = [
+            RoutingField(
+                key=f"{ENRICHMENT_PREFIX}{c.key}.{m['target']}",
+                label=f"{c.name}: {m.get('label') or m['target']}",
+                suggestions=[],
+            )
+            for c in self.connectors.list(tenant_id, active_only=True)
+            for m in c.field_mappings
+        ]
         return RoutingFields(
             fields=[
                 RoutingField(key=key, label=label, suggestions=suggestions.get(key, []))
                 for key, label in FIELDS.items()
-            ],
+            ]
+            + enrichment_fields,
             operators=[
                 RoutingOperator(key=key, label=label, takes_list=key in LIST_OPERATORS)
                 for key, label in OPERATORS.items()

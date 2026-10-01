@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import JSON, DateTime, MetaData, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.ext.mutable import MutableDict
+from sqlalchemy.ext.mutable import MutableDict, MutableList
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # JSONB on Postgres, plain JSON elsewhere (the test suite runs on SQLite).
@@ -20,6 +20,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 # get saved. NOTE: changes to *nested* dicts are NOT detected — reassign the
 # whole value instead: `case.enrichment = {**case.enrichment, "order": {...}}`.
 JSONType = MutableDict.as_mutable(JSON().with_variant(JSONB(), "postgresql"))
+# Same, for columns holding a JSON list (e.g. a connector's field mappings).
+JSONListType = MutableList.as_mutable(JSON().with_variant(JSONB(), "postgresql"))
 
 # Predictable constraint names, so Alembic migrations are stable and readable.
 NAMING_CONVENTION = {

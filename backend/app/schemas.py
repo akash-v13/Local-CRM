@@ -7,6 +7,8 @@ clients, and we never accidentally expose internal columns.
 Naming: `XCreate` = request body to create X, `XRead` = what the API returns.
 """
 
+import json
+import re
 import uuid
 from datetime import datetime
 from typing import Any, Literal
@@ -14,7 +16,14 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.domain.lifecycle import CaseStatus
-from app.domain.routing import LIST_OPERATORS, Operator, is_known_field
+from app.domain.routing import (
+    LIST_OPERATORS,
+    NUMERIC_OPERATORS,
+    Operator,
+    is_known_field,
+    to_number,
+)
+from app.domain.templates import PLACEHOLDER, placeholders
 
 ActorType = Literal["customer", "human", "ai", "system"]
 
@@ -197,6 +206,8 @@ class Condition(BaseModel):
             self.value = [v.strip() for v in self.value if v.strip()]
         elif not isinstance(self.value, str) or not self.value.strip():
             raise ValueError(f"'{self.op}' needs a single non-empty value.")
+        elif self.op in NUMERIC_OPERATORS and to_number(self.value) is None:
+            raise ValueError(f"'{self.op}' needs a number, got '{self.value}'.")
         return self
 
 
@@ -340,3 +351,137 @@ class QueueReport(BaseModel):
     totals: dict[CaseStatus, int]
     open_total: int
     rows: list[QueueReportRow]
+
+
+# ---------------------------------------------------------------------------
+# Connectors (enrichment)
+# ---------------------------------------------------------------------------
+
+AuthType = Literal["none", "api_key", "bearer", "basic"]
+HEADER_NAME = r"^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,100}$"  # RFC 7230 token characters
+
+
+class FieldMapping(BaseModel):
+    """Keep one value from the response: `path` in the JSON → saved as `target`."""
+
+    path: str = Field(min_length=1, max_length=300, description='e.g. "total.amount"')
+    target: str = Field(
+        pattern=r"^[A-Za-z][A-Za-z0-9_]{0,59}$",
+        description='Name on the case, e.g. "orderTotal" → enrichment.<key>.orderTotal',
+    )
+    label: str | None = Field(default=None, max_length=100)
+
+
+class ConnectorConfig(BaseModel):
+    """Everything about a connector except its secret (shared by create, update, read)."""
+
+    key: str = Field(
+        pattern=r"^[a-z][a-z0-9_]{1,39}$",
+        description='Short id used in enrichment.<key>.<field>, e.g. "shop".',
+    )
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+    is_active: bool = True
+    run_order: int = Field(default=100, ge=0, description="Lower runs first.")
+    required: bool = Field(
+        default=False, description="If this fails, the case goes to EnrichmentFailed."
+    )
+    method: Literal["GET", "POST"] = "GET"
+    url_template: str = Field(min_length=8, max_length=2000)
+    headers: dict[str, str] = Field(default_factory=dict, description="Non-secret headers.")
+    body_template: str | None = Field(default=None, description="JSON body for POST.")
+    auth_type: AuthType = "none"
+    auth_header_name: str | None = Field(default=None, pattern=HEADER_NAME)
+    timeout_seconds: float = Field(default=5.0, gt=0, le=30)
+    max_retries: int = Field(default=1, ge=0, le=3)
+    run_when: MatchCriteria = Field(
+        default_factory=MatchCriteria, description="Only run for matching cases. Empty = always."
+    )
+    field_mappings: list[FieldMapping] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check(self) -> "ConnectorConfig":
+        if not self.url_template.lower().startswith(("https://", "http://")):
+            raise ValueError("URL must start with https:// (or http:// in local development).")
+        for name in self.headers:
+            if not re.match(HEADER_NAME, name):
+                raise ValueError(f"Invalid header name '{name}'.")
+        if self.auth_type == "api_key" and not self.auth_header_name:
+            raise ValueError("API key auth needs the header name (e.g. X-Api-Key).")
+        if self.body_template and self.method != "POST":
+            raise ValueError("A request body is only sent with POST.")
+        templates = [self.url_template, *self.headers.values(), self.body_template or ""]
+        for path in (p for t in templates for p in placeholders(t)):
+            if not path.startswith(("case.", "enrichment.")):
+                raise ValueError(f"Unknown placeholder {{{{{path}}}}}: use case.… or enrichment.…")
+        if self.body_template:
+            try:
+                json.loads(PLACEHOLDER.sub("x", self.body_template))
+            except ValueError as exc:
+                raise ValueError(
+                    "Body must be valid JSON, with {{placeholders}} inside quoted strings."
+                ) from exc
+        targets = [m.target for m in self.field_mappings]
+        if len(targets) != len(set(targets)):
+            raise ValueError("Each field mapping needs a different 'saved as' name.")
+        return self
+
+
+class ConnectorWrite(ConnectorConfig):
+    """Create or replace a connector. The secret is write-only."""
+
+    secret: str | None = Field(
+        default=None,
+        description=(
+            "API key / bearer token / 'user:password' for basic auth. Omit to keep the stored "
+            "secret unchanged. Never returned by the API."
+        ),
+    )
+    clear_secret: bool = Field(default=False, description="Remove the stored secret.")
+
+
+class ConnectorRead(ConnectorConfig):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    has_secret: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConnectorTestRequest(BaseModel):
+    case_number: int
+    draft: ConnectorWrite = Field(description="The connector as currently edited (may be unsaved).")
+    connector_id: uuid.UUID | None = Field(
+        default=None, description="When editing a saved connector: reuse its stored secret."
+    )
+
+
+class RequestPreview(BaseModel):
+    method: str
+    url: str
+    headers: dict[str, str] = Field(description="Secret values are masked.")
+    body: str | None
+
+
+class ConnectorRunResult(BaseModel):
+    """What happened when a connector ran (also stored per connector on the case)."""
+
+    status: Literal["ok", "failed", "skipped"]
+    error: str | None = None
+    request: RequestPreview | None = None
+    http_status: int | None = None
+    duration_ms: int | None = None
+    data: dict[str, Any] = Field(default_factory=dict, description="Mapped fields: target → value.")
+    missing: list[str] = Field(
+        default_factory=list, description="Mapped fields whose path wasn't in the response."
+    )
+
+
+class ConnectorTestResult(ConnectorRunResult):
+    response_json: Any = Field(default=None, description="Full response, for picking fields.")
+    response_text: str | None = Field(default=None, description="Non-JSON responses (truncated).")
+
+
+class EnrichRequest(BaseModel):
+    actor_id: str | None = None

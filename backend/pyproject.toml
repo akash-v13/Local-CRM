@@ -12,6 +12,8 @@ dependencies = [
     "sqlalchemy>=2.0.32",
     "psycopg[binary]>=3.2",
     "alembic>=1.13",
+    "httpx>=0.28.1",
+    "cryptography>=50.0.2",
 ]
 
 [dependency-groups]

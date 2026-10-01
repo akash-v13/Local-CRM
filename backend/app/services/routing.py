@@ -24,4 +24,14 @@ def case_context(case: Case, customer_texts: list[str]) -> dict[str, Any]:
         customer_tier=case.customer.tier,
         messages=customer_texts,
         attributes=dict(case.attributes),
+        enrichment=enrichment_data(case),
     )
+
+
+def enrichment_data(case: Case) -> dict[str, dict[str, Any]]:
+    """{connectorKey: {field: value}} for connectors that ran successfully on this case."""
+    return {
+        key: dict(result.get("data") or {})
+        for key, result in case.enrichment.items()
+        if isinstance(result, dict) and result.get("status") == "ok"
+    }

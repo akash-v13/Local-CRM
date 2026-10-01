@@ -123,3 +123,40 @@ def test_known_fields() -> None:
     assert is_known_field("attributes.orderNumber")
     assert not is_known_field("attributes.")
     assert not is_known_field("customer.email")
+
+
+class TestEnrichmentAndNumbers:
+    CTX = build_context(
+        category=None,
+        channel="webform",
+        customer_tier=None,
+        messages=[],
+        attributes={},
+        enrichment={"shop": {"orderTotal": "1,250.00", "daysLate": 6, "carrier": "FastShip"}},
+    )
+
+    def test_enrichment_fields_are_routable(self) -> None:
+        assert evaluate_condition(
+            cond("enrichment.shop.carrier", "equals", "fastship"), self.CTX
+        ).matched
+        assert is_known_field("enrichment.shop.orderTotal")
+        assert not is_known_field("enrichment.shop")
+        assert not is_known_field("enrichment..x")
+
+    def test_numeric_comparisons(self) -> None:
+        assert evaluate_condition(
+            cond("enrichment.shop.orderTotal", "greater_than", "500"), self.CTX
+        ).matched
+        assert evaluate_condition(
+            cond("enrichment.shop.daysLate", "greater_than", "5"), self.CTX
+        ).matched
+        assert not evaluate_condition(
+            cond("enrichment.shop.daysLate", "less_than", "6"), self.CTX
+        ).matched
+        # Non-numeric or missing values never match a numeric comparison.
+        assert not evaluate_condition(
+            cond("enrichment.shop.carrier", "greater_than", "1"), self.CTX
+        ).matched
+        assert not evaluate_condition(
+            cond("enrichment.other.x", "less_than", "1"), self.CTX
+        ).matched

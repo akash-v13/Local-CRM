@@ -28,7 +28,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-Operator = Literal["equals", "not_equals", "one_of", "contains_any"]
+Operator = Literal["equals", "not_equals", "one_of", "contains_any", "greater_than", "less_than"]
 
 # Fields a condition can test. `attributes.<key>` (tenant custom fields) is also allowed.
 FIELDS: dict[str, str] = {
@@ -40,20 +40,43 @@ FIELDS: dict[str, str] = {
     "message": "Customer message text",
 }
 ATTRIBUTE_PREFIX = "attributes."
+# Data fetched by connectors: "enrichment.<connectorKey>.<field>", e.g. enrichment.shop.orderTotal
+ENRICHMENT_PREFIX = "enrichment."
 
 OPERATORS: dict[Operator, str] = {
     "equals": "is",
     "not_equals": "is not",
     "one_of": "is one of",
     "contains_any": "contains any of the words",
+    "greater_than": "is greater than",
+    "less_than": "is less than",
 }
+NUMERIC_OPERATORS: frozenset[Operator] = frozenset({"greater_than", "less_than"})
 LIST_OPERATORS: frozenset[Operator] = frozenset({"one_of", "contains_any"})
 
 
 def is_known_field(name: str) -> bool:
-    return name in FIELDS or (
-        name.startswith(ATTRIBUTE_PREFIX) and len(name) > len(ATTRIBUTE_PREFIX)
-    )
+    if name in FIELDS:
+        return True
+    if name.startswith(ATTRIBUTE_PREFIX):
+        return len(name) > len(ATTRIBUTE_PREFIX)
+    if name.startswith(ENRICHMENT_PREFIX):
+        parts = name[len(ENRICHMENT_PREFIX) :].split(".")
+        return len(parts) == 2 and all(parts)
+    return False
+
+
+def to_number(value: Any) -> float | None:
+    """Parse numbers like 42, "42", "1,250.50" or "$19.99"; None if it isn't one."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    cleaned = str(value).strip().replace(",", "").lstrip("$€£")
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
 
 
 def build_context(
@@ -63,11 +86,13 @@ def build_context(
     customer_tier: str | None,
     messages: Sequence[str],
     attributes: dict[str, Any],
+    enrichment: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Flatten a case into the {field: value} shape that conditions test against.
 
     `category` is the case's *effective* category. `messages` are the customer's
-    own messages (joined for keyword matching).
+    own messages (joined for keyword matching). `enrichment` is
+    {connectorKey: {field: value}} for connectors that succeeded.
     """
     category = category or {}
     context: dict[str, Any] = {
@@ -80,6 +105,9 @@ def build_context(
     }
     for key, value in attributes.items():
         context[ATTRIBUTE_PREFIX + key] = value
+    for connector_key, fields in (enrichment or {}).items():
+        for field_name, value in fields.items():
+            context[f"{ENRICHMENT_PREFIX}{connector_key}.{field_name}"] = value
     return context
 
 
@@ -149,6 +177,12 @@ def evaluate_condition(condition: dict[str, Any], context: dict[str, Any]) -> Co
     elif op == "contains_any":
         found = _find_words(str(actual), expected) if present else []
         return ConditionResult(name, op, expected, bool(found), found)
+    elif op in NUMERIC_OPERATORS:
+        number, limit = to_number(actual), to_number(expected)
+        if number is None or limit is None:
+            matched = False
+        else:
+            matched = number > limit if op == "greater_than" else number < limit
     else:
         raise ValueError(f"Unknown operator: {op}")
 
@@ -182,6 +216,8 @@ def route(candidates: Sequence[QueueCandidate], context: dict[str, Any]) -> Rout
 
 def describe_condition(result: ConditionResult) -> str:
     """Human-readable, e.g. 'Category is "Delivery"'."""
-    label = FIELDS.get(result.field) or result.field.removeprefix(ATTRIBUTE_PREFIX)
+    label = FIELDS.get(result.field) or (
+        result.field.removeprefix(ATTRIBUTE_PREFIX).removeprefix(ENRICHMENT_PREFIX)
+    )
     value = ", ".join(result.value) if isinstance(result.value, list) else result.value
     return f'{label} {OPERATORS.get(result.op, result.op)} "{value}"'  # type: ignore[call-overload]
