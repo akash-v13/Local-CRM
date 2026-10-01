@@ -25,6 +25,7 @@ def case_context(case: Case, customer_texts: list[str]) -> dict[str, Any]:
         messages=customer_texts,
         attributes=dict(case.attributes),
         enrichment=enrichment_data(case),
+        queue_name=case.queue.name if case.queue else None,
     )
 
 

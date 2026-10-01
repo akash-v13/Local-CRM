@@ -14,6 +14,9 @@ x-backend-env: &backend-env
   # inside the Docker network. Production uses https and public hosts only.
   CONNECTOR_ALLOWED_HOSTS: mocks
   CONNECTOR_ALLOW_HTTP: "true"
+  # AI reply drafting: taken from your shell (`export ANTHROPIC_API_KEY=...` before
+  # `docker compose up`). Empty = drafting off; the UI explains how to turn it on.
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
 
 services:
   db:

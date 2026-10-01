@@ -1,0 +1,10 @@
+{#---
+description: Damaged, wrong or missing items
+max_words: 170
+must_include: sorry
+---#}
+The customer received {% if case.subcategory %}an order with a problem: {{ case.subcategory | lower }}{% else %}an order with a problem{% endif %}.
+
+1. Apologise; receiving the wrong or a damaged item is frustrating.
+2. Confirm what went wrong using the facts (which item, what happened).
+3. Explain the fix: replacement, return or refund, only as the facts state. If the facts don't say, explain that the team will confirm the best option. If photos would help and the facts don't already confirm the problem, ask for one clear photo.

@@ -16,8 +16,21 @@ import type {
   ConnectorTestResult,
   Credential,
   CredentialWrite,
+  CostProjection,
   Message,
   MessageCreateInput,
+  ModelOption,
+  CoverageRow,
+  PromptPreview,
+  PromptTemplate,
+  PromptTemplateWrite,
+  TemplateOverride,
+  TemplateVariable,
+  SampleCase,
+  SampleCaseWrite,
+  TestRun,
+  TestRunCreate,
+  TestRunEstimate,
   Queue,
   QueueInput,
   QueueReport,
@@ -160,6 +173,50 @@ export const api = {
     put<Credential>(`/tenants/${tenantId}/credentials/${id}`, input),
   testCredential: (tenantId: string, id: string) =>
     post<TokenTestResult>(`/tenants/${tenantId}/credentials/${id}/test`, {}),
+
+  // AI reply drafting
+  aiModels: () => request<ModelOption[]>("/ai/models"),
+  draftReply: (tenantId: string, caseNumber: number, actorId: string) =>
+    post<Message>(`/tenants/${tenantId}/cases/${caseNumber}/drafts`, { actor_id: actorId }),
+  // Prompt templates. Names contain a slash (queue/…, category/…) and are used in the path as is.
+  listPromptTemplates: (tenantId: string) =>
+    request<PromptTemplate[]>(`/tenants/${tenantId}/prompt-templates`),
+  getPromptTemplate: (tenantId: string, name: string) =>
+    request<PromptTemplate>(`/tenants/${tenantId}/prompt-templates/${name}`),
+  savePromptTemplate: (tenantId: string, name: string, input: PromptTemplateWrite, actorId: string) =>
+    put<PromptTemplate>(`/tenants/${tenantId}/prompt-templates/${name}?actor_id=${encodeURIComponent(actorId)}`, input),
+  importPromptTemplate: (tenantId: string, name: string, content: string, actorId: string) =>
+    post<PromptTemplate>(`/tenants/${tenantId}/prompt-templates/import?actor_id=${encodeURIComponent(actorId)}`, { name, content }),
+  /** URL for downloading the template as a .jinja file (header included). */
+  promptTemplateDownloadUrl: (tenantId: string, name: string) =>
+    `/api/tenants/${tenantId}/prompt-templates/${name}/download`,
+  previewPrompt: (
+    tenantId: string,
+    input: { case_number?: number; sample_id?: string; override?: TemplateOverride | null },
+  ) => post<PromptPreview>(`/tenants/${tenantId}/prompt-templates/preview`, input),
+  templateCoverage: (tenantId: string) =>
+    request<CoverageRow[]>(`/tenants/${tenantId}/prompt-templates/coverage`),
+  templateVariables: (tenantId: string) =>
+    request<TemplateVariable[]>(`/tenants/${tenantId}/prompt-templates/variables`),
+  platformRules: async (tenantId: string) => {
+    const response = await fetch(`/api/tenants/${tenantId}/prompt-templates/platform`);
+    if (!response.ok) throw new ApiError(response.status, response.statusText);
+    return response.text();
+  },
+  costProjection: (tenantId: string, name: string, monthlyVolume: number) =>
+    request<CostProjection>(`/tenants/${tenantId}/prompt-templates/${name}/projection?monthly_volume=${monthlyVolume}`),
+  listSampleCases: (tenantId: string) => request<SampleCase[]>(`/tenants/${tenantId}/sample-cases`),
+  createSampleCase: (tenantId: string, input: SampleCaseWrite) =>
+    post<SampleCase>(`/tenants/${tenantId}/sample-cases`, input),
+  updateSampleCase: (tenantId: string, id: string, input: SampleCaseWrite) =>
+    put<SampleCase>(`/tenants/${tenantId}/sample-cases/${id}`, input),
+  estimateTest: (tenantId: string, input: TestRunCreate) =>
+    post<TestRunEstimate>(`/tenants/${tenantId}/template-tests/estimate`, input),
+  startTest: (tenantId: string, input: TestRunCreate) =>
+    post<TestRun>(`/tenants/${tenantId}/template-tests`, input),
+  getTest: (tenantId: string, id: string) => request<TestRun>(`/tenants/${tenantId}/template-tests/${id}`),
+  recentTests: (tenantId: string, templateName: string) =>
+    request<TestRun[]>(`/tenants/${tenantId}/template-tests?template_name=${encodeURIComponent(templateName)}`),
 };
 
 export type Api = typeof api;

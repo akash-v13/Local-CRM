@@ -37,6 +37,7 @@ FIELDS: dict[str, str] = {
     "category.subcategory": "Subcategory",
     "channel": "Channel",
     "customer.tier": "Customer tier",
+    "queue.name": "Queue",
     "message": "Customer message text",
 }
 ATTRIBUTE_PREFIX = "attributes."
@@ -87,6 +88,7 @@ def build_context(
     messages: Sequence[str],
     attributes: dict[str, Any],
     enrichment: dict[str, dict[str, Any]] | None = None,
+    queue_name: str | None = None,
 ) -> dict[str, Any]:
     """Flatten a case into the {field: value} shape that conditions test against.
 
@@ -102,6 +104,7 @@ def build_context(
         "channel": channel,
         "customer.tier": customer_tier,
         "message": "\n".join(messages),
+        "queue.name": queue_name,
     }
     for key, value in attributes.items():
         context[ATTRIBUTE_PREFIX + key] = value

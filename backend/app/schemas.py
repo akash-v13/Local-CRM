@@ -152,6 +152,10 @@ class MessageCreate(BaseModel):
         default=None,
         description="agent_reply only: move the case to this status in the same transaction.",
     )
+    from_draft_id: uuid.UUID | None = Field(
+        default=None,
+        description="agent_reply only: the AI draft this reply started from (tracks edits).",
+    )
 
 
 class TransitionRequest(BaseModel):
@@ -232,6 +236,12 @@ class QueueSettings(BaseModel):
     )
     sla_first_response_hours: int | None = Field(default=None, ge=1)
     reopen_window_hours: int | None = Field(default=72, ge=1)
+    ai_model: Literal["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"] = Field(
+        default="claude-sonnet-5", description="Model for AI drafts in this queue."
+    )
+    ai_effort: Literal["low", "medium", "high"] = Field(
+        default="low", description="Thinking effort (Sonnet/Opus only)."
+    )
 
 
 class QueueCreate(BaseModel):
@@ -612,3 +622,266 @@ class TokenTestResult(BaseModel):
     error: str | None = None
     token_preview: str | None = Field(default=None, description="First characters only.")
     expires_at: datetime | None = None
+
+
+# ---------------------------------------------------------------------------
+# AI reply drafting: prompt templates, samples, test lab, drafts, cost projections
+# ---------------------------------------------------------------------------
+
+ModelId = Literal["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"]
+EffortLevel = Literal["low", "medium", "high"]
+TemplateKind = Literal["base", "persona", "category"]
+
+
+class TemplateChecks(BaseModel):
+    """Automated checks; combined across the layers a draft uses (strictest word limit wins)."""
+
+    max_words: int | None = Field(default=None, ge=10, le=2000)
+    must_include: list[str] = Field(default_factory=list)
+    must_not_include: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _clean(self) -> "TemplateChecks":
+        self.must_include = [p.strip() for p in self.must_include if p.strip()]
+        self.must_not_include = [p.strip() for p in self.must_not_include if p.strip()]
+        return self
+
+
+class PromptTemplateWrite(TemplateChecks):
+    """Save a template. A change to the source or checks creates a new version."""
+
+    source: str = Field(min_length=1, max_length=50_000, description="Jinja, without a header.")
+    description: str | None = Field(default=None, max_length=500)
+
+
+class PromptTemplateVersionRead(TemplateChecks):
+    model_config = ConfigDict(from_attributes=True)
+
+    version: int
+    source: str
+    created_at: datetime
+    created_by: str | None
+
+
+class PromptTemplateRead(BaseModel):
+    name: str
+    kind: TemplateKind
+    description: str | None
+    current_version: int
+    current: PromptTemplateVersionRead
+    versions: list[PromptTemplateVersionRead] = Field(description="Newest first.")
+    is_default_content: bool = Field(description="Same as the starter template of that name.")
+    updated_at: datetime
+
+
+class TemplateImport(BaseModel):
+    """A .jinja file's content (optional header + body) to save under `name`."""
+
+    name: str
+    content: str = Field(min_length=1, max_length=60_000)
+
+
+class TemplateOverride(PromptTemplateWrite):
+    """An unsaved edit, for preview and the test lab."""
+
+    name: str
+
+
+class PromptPreviewRequest(BaseModel):
+    case_number: int | None = None
+    sample_id: uuid.UUID | None = None
+    override: TemplateOverride | None = None
+
+    @model_validator(mode="after")
+    def _one_input(self) -> "PromptPreviewRequest":
+        if (self.case_number is None) == (self.sample_id is None):
+            raise ValueError("Give exactly one of case_number or sample_id.")
+        return self
+
+
+class LayerRead(BaseModel):
+    layer: Literal["baseline", "persona", "category"]
+    name: str
+    version: int | None = Field(description="None = unsaved edit.")
+    text: str
+
+
+class PromptPreview(BaseModel):
+    ok: bool
+    error: str | None = None
+    system_platform: str | None = None
+    layers: list[LayerRead] = Field(default_factory=list)
+    user: str | None = None
+    checks: TemplateChecks | None = None
+    model: str | None = None
+    effort: str | None = None
+
+
+class TemplateVariable(BaseModel):
+    path: str
+    description: str
+    example: str | None = None
+
+
+class CoverageRow(BaseModel):
+    """Which templates a queue or category would use right now."""
+
+    kind: Literal["persona", "category"]
+    label: str
+    template: str
+    specific: bool = Field(description="False = falls back to a broader or default template.")
+    expected_name: str = Field(description="The most specific template name for this row.")
+
+
+class SampleCaseWrite(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    channel: Literal["webform", "email", "chat", "api"] = "webform"
+    category: CategoryIn | None = None
+    customer_name: str | None = None
+    customer_tier: str | None = None
+    queue_name: str | None = None
+    facts: dict[str, Any] = Field(
+        default_factory=dict, description='What the case data says, e.g. {"daysLate": 6}.'
+    )
+    message: str = Field(min_length=1, max_length=20_000)
+
+
+class SampleCaseRead(SampleCaseWrite):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    created_at: datetime
+
+
+class CheckResultRead(BaseModel):
+    name: str
+    passed: bool
+    detail: str
+
+
+class TemplateRef(BaseModel):
+    layer: Literal["baseline", "persona", "category"]
+    name: str
+    version: int | None
+
+
+class DraftInfo(BaseModel):
+    """Details of one AI draft (stored on the draft message as `ai`)."""
+
+    model: str
+    served_by: str
+    templates: list[TemplateRef]
+    reply: str
+    facts_used: list[str]
+    needs_attention: bool
+    attention_reason: str
+    checks: list[CheckResultRead]
+    warnings: list[str]
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cost_usd: float
+    latency_ms: int
+
+
+class DraftRequest(BaseModel):
+    actor_id: str | None = None
+
+
+class TestRunCreate(BaseModel):
+    """Test one template (as edited) on several models against inputs.
+    It's used in its layer for every input; the other layers resolve normally."""
+
+    template: TemplateOverride
+    models: list[ModelId] = Field(min_length=1, max_length=3)
+    effort: EffortLevel = "low"
+    sample_ids: list[uuid.UUID] = Field(default_factory=list)
+    case_numbers: list[int] = Field(default_factory=list)
+    runs_per_input: int = Field(default=2, ge=1, le=5)
+    actor_id: str | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> "TestRunCreate":
+        if not self.sample_ids and not self.case_numbers:
+            raise ValueError("Pick at least one sample or case to test with.")
+        if len(set(self.models)) != len(self.models):
+            raise ValueError("Each model only once.")
+        total = len(self.models) * (len(self.sample_ids) + len(self.case_numbers))
+        if total * self.runs_per_input > 60:
+            raise ValueError("At most 60 drafts per test run; pick fewer inputs, models or runs.")
+        return self
+
+
+class TestRunEstimate(BaseModel):
+    total_calls: int
+    estimated_cost_usd: float
+    per_model: dict[str, float]
+
+
+class TestResult(BaseModel):
+    input_ref: str
+    input_label: str
+    model: str
+    run: int
+    ok: bool
+    error: str | None = None
+    draft: DraftInfo | None = None
+
+
+class ModelSummary(BaseModel):
+    model: str
+    label: str
+    drafts: int
+    errors: int
+    checks_passed_pct: float | None = Field(description="Share of automated checks passed.")
+    consistency: float | None = Field(
+        description="Mean similarity of repeated drafts for the same input (0-1)."
+    )
+    needs_attention: int
+    avg_words: float | None
+    avg_cost_usd: float | None
+    avg_latency_ms: float | None
+    total_cost_usd: float
+
+
+class TestRunRead(BaseModel):
+    id: uuid.UUID
+    template_name: str | None
+    status: str
+    total_calls: int
+    completed_calls: int
+    estimated_cost_usd: float
+    actual_cost_usd: float
+    error: str | None
+    config: dict[str, Any]
+    results: list[TestResult]
+    summary: list[ModelSummary]
+    created_at: datetime
+    created_by: str | None
+
+
+class CostProjectionRow(BaseModel):
+    model: str
+    label: str
+    source: Literal["measured", "estimated"]
+    sample_size: int
+    avg_input_tokens: float
+    avg_output_tokens: float
+    cost_per_reply_usd: float
+    cost_per_1000_usd: float
+    monthly_cost_usd: float
+
+
+class CostProjection(BaseModel):
+    monthly_volume: int
+    rows: list[CostProjectionRow]
+    notes: list[str]
+
+
+class ModelOption(BaseModel):
+    id: str
+    label: str
+    summary: str
+    input_per_mtok: float
+    output_per_mtok: float
+    supports_effort: bool

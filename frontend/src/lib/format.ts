@@ -66,3 +66,16 @@ export function formatAge(iso: string, now: Date = new Date()): string {
   if (hours < 48) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
 }
+
+/** Money in USD with enough precision for per-reply costs (e.g. $0.0021). */
+export function formatUsd(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  if (value === 0) return "$0";
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  if (value < 1) return `$${value.toFixed(3)}`;
+  return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+export function formatPct(value: number | null | undefined, digits = 0): string {
+  return value === null || value === undefined ? "—" : `${value.toFixed(digits)}%`;
+}

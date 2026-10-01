@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 
 import { api, errorMessage } from "../api/client";
-import type { CaseDetail, MessageKind } from "../api/types";
+import type { CaseDetail, DraftInfo, MessageKind } from "../api/types";
+import { DraftPanel } from "./DraftPanel";
 
 type Mode = "reply" | "note" | "customer";
 
@@ -33,6 +34,8 @@ export function ReplyComposer({ caseDetail, agentId, onSent }: Props) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [drafting, setDrafting] = useState(false);
+  const [draft, setDraft] = useState<{ id: string; info: DraftInfo }>();
 
   const closed = caseDetail.status === "Closed";
   const canSolve = caseDetail.allowed_next_statuses.includes("Solved");
@@ -48,13 +51,30 @@ export function ReplyComposer({ caseDetail, agentId, onSent }: Props) {
         body: body.trim(),
         author_id: agentId,
         then_status: thenSolve ? "Solved" : undefined,
+        from_draft_id: kind === "agent_reply" ? draft?.id : undefined,
       });
       setBody("");
+      setDraft(undefined);
       onSent();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function draftWithAi() {
+    setDrafting(true);
+    setError(undefined);
+    try {
+      const message = await api.draftReply(caseDetail.tenant_id, caseDetail.case_number, agentId);
+      setDraft({ id: message.id, info: message.ai as unknown as DraftInfo });
+      setBody(message.body);
+      onSent(); // the draft is saved on the case; refresh the history
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setDrafting(false);
     }
   }
 
@@ -89,10 +109,29 @@ export function ReplyComposer({ caseDetail, agentId, onSent }: Props) {
         disabled={busy || modeBlocked}
       />
 
+      {mode === "reply" && draft && (
+        <DraftPanel info={draft.info} edited={body.trim() !== draft.info.reply.trim()} onDiscard={() => {
+          setDraft(undefined);
+          setBody("");
+        }} />
+      )}
+
       <p className="hint">{modeBlocked ? "Closed cases only accept internal notes." : HINTS[mode]}</p>
       {error && <p className="error" role="alert">{error}</p>}
 
       <div className="actions">
+        {mode === "reply" && !modeBlocked && (
+          <button
+            type="button"
+            className="button ai"
+            disabled={busy || drafting}
+            onClick={() => void draftWithAi()}
+            title="Write a draft with this case's queue persona and case-type templates"
+          >
+            {drafting ? "Drafting…" : draft ? "✨ Redraft" : "✨ Draft with AI"}
+          </button>
+        )}
+        <span className="spacer" />
         {mode === "reply" && canSolve && (
           <button
             type="button"

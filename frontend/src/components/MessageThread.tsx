@@ -6,7 +6,7 @@ function authorLabel(message: Message, customerName: string): string {
     case "customer":
       return customerName;
     case "ai":
-      return "AI agent";
+      return "AI";
     case "system":
       return "System";
     default:
@@ -35,6 +35,7 @@ export function MessageThread({
           <div className="message-meta">
             <strong>{authorLabel(m, customerName)}</strong>
             {m.visibility === "internal" && <span className="tag tag-note">Internal note</span>}
+            {m.visibility === "draft" && <span className="tag tag-ai">AI draft · not sent</span>}
             {m.direction === "outbound" && <span className="tag">Sent · simulated</span>}
             <time dateTime={m.created_at}>{formatDateTime(m.created_at)}</time>
           </div>

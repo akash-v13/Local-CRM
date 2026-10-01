@@ -39,10 +39,20 @@ app/
 │   ├── connectors.py Connector management + live test
 │   ├── credentials.py Credential management + token test
 │   ├── enrichment.py Runs connectors for a case (called by the worker), then routes
+│   ├── replies.py    Prompt templates (save, preview, coverage, costs) + AI drafts on cases
+│   ├── template_tests.py Sample cases + test lab runs (executed by the worker)
 │   └── routing.py    Adapts models to the pure routing logic
 ├── connectors/       Calling external APIs: runner (one request), auth (credentials,
 │                     token cache), context (what templates can see)
 ├── security/         SSRF protection, secret encryption
+├── ai/               Reply drafting
+│   ├── engine.py     Layered Jinja templates: names, fallbacks, validation, sandboxed rendering
+│   ├── context.py    Case → the masked variables templates can use
+│   ├── templates/    Locked platform layers + the starter pack (see its README.md)
+│   ├── pii.py        Mask / restore personal data
+│   ├── drafter.py    The Claude call (structured output, cached system prompt)
+│   ├── models.py     Models and prices (every cost comes from here)
+│   └── checks.py     Word limits, must / must-not phrases, consistency
 ├── worker.py         Background worker: `uv run python -m app.worker`
 ├── repositories.py   The ONLY code that queries the database
 ├── domain/           Pure business rules — no DB, no HTTP

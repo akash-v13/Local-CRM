@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     connector_allow_http: bool = False
     # Largest connector response we read, in bytes.
     connector_max_response_bytes: int = 1_000_000
+    # --- AI reply drafting ------------------------------------------------------------
+    # Anthropic API key (https://console.anthropic.com). Without it, drafting is off
+    # and the UI says how to enable it.
+    anthropic_api_key: str | None = None
+
     # Background worker: seconds between checks for new jobs when idle.
     worker_poll_seconds: float = 1.0
 

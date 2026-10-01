@@ -20,6 +20,8 @@ export function OpsLayout() {
         <NavLink to="/ops/queues">Queues &amp; routing</NavLink>
         <NavLink to="/ops/connectors">Connectors</NavLink>
         <NavLink to="/ops/credentials">Credentials</NavLink>
+        <NavLink to="/ops/templates">Prompt templates</NavLink>
+        <NavLink to="/ops/samples">Sample cases</NavLink>
       </nav>
       {tenantId ? <Outlet /> : <NeedsTenant />}
     </div>

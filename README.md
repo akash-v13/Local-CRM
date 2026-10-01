@@ -1,42 +1,197 @@
 # Local CRM
 
-A customer care **resolution engine**: it takes in customer cases, enriches them with data from the business's own systems, decides compensation using rules the business configures, drafts replies with AI, and routes anything risky to a human.
+A customer care **resolution engine**. It takes in customer cases, enriches them with data from the business's own systems, routes each one to the right queue, and drafts replies with AI for an agent to review. A configurable compensation matrix comes next.
 
-> Status: **early.** Working: case intake (API + test webform), case lifecycle, agent replies and notes, audit trail, queue routing, Operations Portal (queues, dashboard), and **enrichment**: connectors with shared credentials (incl. OAuth / generated tokens), a background worker, and routing on enriched data. Next: compensation matrix, AI drafting.
+This README is the **one place to start**. It explains what the product does and how it's built, and links to the detailed guide for each part. Each folder's own README goes deeper, but you shouldn't need to hunt through them.
 
-## Repository layout
+---
+
+## Contents
+
+1. [Status](#1-status)
+2. [How a case flows](#2-how-a-case-flows)
+3. [Features](#3-features)
+4. [Architecture](#4-architecture)
+5. [Quick start](#5-quick-start)
+6. [Developing](#6-developing)
+7. [Documentation map](#7-documentation-map)
+8. [Principles](#8-principles)
+
+---
+
+## 1. Status
+
+Early, but working end to end on a laptop.
+
+| Area | State |
+|---|---|
+| Case intake (API + test webform), lifecycle, replies, internal notes, audit trail | ✅ Built |
+| Queue routing (rule builder, priorities, live "which queue?" test), manual reroute | ✅ Built |
+| Operations Portal: dashboard, queues, connectors, credentials, prompt templates, sample cases | ✅ Built |
+| Enrichment: connectors to any HTTP API, shared credentials (API key, bearer, basic, OAuth 2.0, generated tokens), background worker | ✅ Built |
+| AI reply drafting: layered Jinja prompt templates, PII masking, test lab across Claude models, cost projections | ✅ Built (needs an Anthropic API key) |
+| Compensation matrix and payouts | ⏭️ Next |
+| Real email / channel connectors, SLA timers, approvals, AI auto-send, sign-in | 🗓️ Planned |
+
+---
+
+## 2. How a case flows
+
+```mermaid
+flowchart LR
+    In([Customer<br/>webform / API]) --> Intake[Intake<br/>case number assigned]
+    Intake --> Enrich[Enrichment worker<br/>calls the business's APIs]
+    Enrich --> Route[Queue routing<br/>first matching queue wins]
+    Route --> Queue[(Queue)]
+    Queue --> Agent[Agent console]
+    Agent -- "✨ Draft with AI" --> AI[AI drafting<br/>layered templates + Claude]
+    AI -- draft --> Agent
+    Agent -- review, edit, send --> Out([Reply to customer])
+```
+
+Every case moves through a fixed set of statuses. The backend rejects any move that isn't allowed, and every change is written to the audit trail:
+
+```
+Intake ──▶ Queued ──▶ AssignedAgent / AssignedAI ──▶ WaitingApproval ──▶ Solved ──▶ Closed
+  │                         │                                              │
+  └─▶ EnrichmentFailed      └─▶ WaitingOnCustomer ──▶ Queued               └─▶ Queued (reopen)
+```
+
+Cases are identified by a **case number**, which is the creation time in Unix microseconds (e.g. `1790812345678901`).
+
+---
+
+## 3. Features
+
+### Cases and the agent console
+Agents see the conversation, case details, enrichment results, queue and history. From there they can reply, add internal notes, change status, reroute, or draft with AI. The test webform stands in for a business's website contact form.
+→ [frontend/README.md](frontend/README.md) (routes and screens)
+
+### Queue routing
+Queues are checked in priority order, and the first one whose conditions match gets the case. Conditions can use case fields, custom attributes and enrichment data (e.g. *category is Delivery* and *orderTotal greater than 500*). The queue editor shows live which queue a real case would land in.
+→ [Codebase guide §8](docs/dev/codebase-guide.md#8-queue-matching-routing)
+
+### Enrichment (connectors and credentials)
+A connector is an API call configured in the UI: the request (with `{{case fields}}` placeholders), authentication, which response fields to keep, when to run, and the retry policy. Credentials are shared across connectors. Secrets are encrypted and write-only, and generated tokens are cached and refreshed automatically. Calls run on a background worker and are protected against SSRF.
+→ [Codebase guide §10](docs/dev/codebase-guide.md#10-enrichment-connectors-credentials-and-the-worker)
+
+### AI reply drafting
+Each draft is built from **Jinja templates in layers**. If two layers conflict, the earlier one wins:
+
+| # | Layer | Template | Who edits it |
+|---|---|---|---|
+| 1 | Platform rules | `_platform/guardrails.jinja` | Nobody (locked) |
+| 2 | Baseline: tone and empathy for every reply | `base.jinja` | Each business |
+| 3 | Persona: voice, empathy level, greeting, sign-off | `queue/<Queue>.jinja`, or the default persona | Each business |
+| 4 | Case type: what to answer and how | `category/<Type>_<Category>_<Sub>.jinja`, falling back to broader templates | Each business |
+
+Personal data is masked before the prompt is built and restored afterwards. Each draft is checked for word limits, required and banned phrases, and invented contact details, and an agent always reviews it before it's sent. Managers can preview the exact prompt for any case for free, compare Haiku / Sonnet / Opus in the **test lab** (quality, consistency, speed, cost), and see **monthly cost projections**.
+→ [Template author guide](backend/app/ai/templates/README.md) · [Codebase guide §11](docs/dev/codebase-guide.md#11-ai-reply-drafting) · [Try it](docs/dev/local-setup.md)
+
+### Operations Portal
+This is for managers. It has a dashboard (open cases, a queue × status table) and the editors for queues, connectors, credentials, prompt templates and sample cases.
+
+---
+
+## 4. Architecture
+
+| Part | Technology |
+|---|---|
+| API | Python 3.12, FastAPI, Pydantic, SQLAlchemy 2, Alembic |
+| Database | Postgres 17 (JSONB for flexible per-business data) |
+| Background work | Worker process using a Postgres job queue (`FOR UPDATE SKIP LOCKED`) |
+| AI | Anthropic Claude (Haiku 4.5, Sonnet 5, Opus 5) via the official SDK; Jinja2 sandbox for templates |
+| UI | React 19, TypeScript, Vite, React Router |
+| Local stack | Docker Compose |
+| CI | GitHub Actions: lint, strict types and tests for backend and frontend, migrations against real Postgres |
+
+The backend is layered: **api → services → domain / repositories → models**. Each layer only talks to the one below it, and every query is scoped to a tenant. Details: [Codebase guide §1](docs/dev/codebase-guide.md#1-the-layers).
+
+**Docker Compose services**
+
+| Service | What | Port |
+|---|---|---|
+| `db` | Postgres | 5432 |
+| `api` | FastAPI (applies migrations on start) | 8000 (`/docs` for interactive API docs) |
+| `worker` | Background jobs: enrichment, test-lab runs | – |
+| `mocks` | Fake shop/shipping API for demos | 8100 |
+| `ui` | React app | 5173 |
+
+**Repository layout**
 
 ```
 .
-├── backend/              Python / FastAPI API (see backend/README.md)
-├── frontend/             React / TypeScript UI (see frontend/README.md)
+├── backend/              FastAPI API, worker, migrations, tests   → backend/README.md
+│   └── app/ai/templates/ Prompt template layers + starter pack     → its README.md
+├── frontend/             React UI                                  → frontend/README.md
 ├── docs/
-│   ├── README.md         Architecture notes and product docs — start here
-│   ├── 04-product-ideas.md
-│   ├── 05-data-model.md
-│   └── dev/              Developer guides
-│       ├── local-setup.md
-│       ├── codebase-guide.md
-│       └── database-guide.md
-└── docker-compose.yml    Local stack (Postgres + API + UI)
+│   ├── dev/              Developer guides (setup, codebase, database)
+│   ├── 04-product-ideas.md  Running log of product ideas and feedback
+│   ├── 05-data-model.md     Long-term data model
+│   └── 01–03                Background architecture notes (sanitized)
+├── docker-compose.yml    Local stack
+└── .github/workflows/    CI
 ```
 
-## Quick start
+---
 
-**With Docker** (recommended; install [Docker Desktop](https://www.docker.com/products/docker-desktop/) first):
+## 5. Quick start
+
+Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), then run:
 
 ```bash
 docker compose up --build
 ```
 
-Then open **http://localhost:5173** for the app (agent console + test webform), or **http://localhost:8000/docs** for the interactive API docs.
+- App: **http://localhost:5173** (agent console, test webform, Operations Portal)
+- API docs: **http://localhost:8000/docs**
 
-**Without Docker**, and other options: see [docs/dev/local-setup.md](docs/dev/local-setup.md).
+To turn on AI drafting, put your key in a `.env` file in the project root. The file is git-ignored, so never put the key anywhere else:
 
-## Developer guides
+```bash
+echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
+docker compose up -d
+```
 
-| Guide | Read it when… |
+For a walkthrough (creating a business, sending a case, setting up a connector, testing templates) and for running without Docker, see [docs/dev/local-setup.md](docs/dev/local-setup.md).
+
+---
+
+## 6. Developing
+
+| Task | Command (from the folder) |
 |---|---|
-| [Local setup](docs/dev/local-setup.md) | Getting the project running, running tests |
-| [Codebase guide](docs/dev/codebase-guide.md) | Understanding how the code is organized and adding a feature |
-| [Database guide](docs/dev/database-guide.md) | Working with Postgres, models and migrations (written for someone coming from a document database) |
+| Backend tests, types, lint | `cd backend && uv run pytest && uv run mypy app tests && uv run ruff check .` |
+| Frontend tests, types, build | `cd frontend && npm test && npm run typecheck && npm run build` |
+| New database migration | `cd backend && uv run alembic revision --autogenerate -m "…"` (then read it) |
+
+CI runs all of these on every pull request. To add a feature, follow the worked example in [Codebase guide §4](docs/dev/codebase-guide.md#4-adding-a-feature-worked-example).
+
+---
+
+## 7. Documentation map
+
+| Document | For | What's in it |
+|---|---|---|
+| **This README** | Everyone | What it is, how it works, where everything is |
+| [docs/dev/local-setup.md](docs/dev/local-setup.md) | Anyone running it | Docker and non-Docker setup, walkthroughs, AI key, troubleshooting |
+| [docs/dev/codebase-guide.md](docs/dev/codebase-guide.md) | Developers | Layers, request walkthrough, conventions, routing / enrichment / AI internals, full API endpoint list |
+| [docs/dev/database-guide.md](docs/dev/database-guide.md) | Developers | Tables today, columns vs JSON, migrations, transactions, locking (written for document-database developers) |
+| [backend/README.md](backend/README.md) | Backend developers | Commands and a map of every backend folder |
+| [frontend/README.md](frontend/README.md) | Frontend developers | Routes, components, conventions, tests |
+| [backend/app/ai/templates/README.md](backend/app/ai/templates/README.md) | Template authors | Layers, naming, header checks, available variables, sandbox rules |
+| [docs/05-data-model.md](docs/05-data-model.md) | Product / architecture | Long-term data model, including parts not built yet |
+| [docs/04-product-ideas.md](docs/04-product-ideas.md) | Product | Running log of product ideas and feedback |
+| [docs/README.md](docs/README.md) → 01–03 | Background | Sanitized architecture notes from earlier customer care and GenAI work that inspired this design |
+
+**Keeping docs current:** when a change affects behavior, update the detailed guide it belongs to *and* the matching line here (status table, feature summary or documentation map).
+
+---
+
+## 8. Principles
+
+1. **The AI never decides anything that matters.** Eligibility and compensation come from rules the business configures. The model only writes the reply.
+2. **A human reviews every draft** until a queue explicitly allows otherwise.
+3. **The model never sees raw personal data.** It's masked before the prompt is built and restored afterwards.
+4. **Everything is auditable.** Every status change, reroute, enrichment and draft is recorded with who did it and why.
+5. **One business can never see another's data.** Every query is scoped to a tenant.

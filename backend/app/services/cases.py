@@ -2,6 +2,7 @@
 
 import uuid
 from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -361,6 +362,8 @@ class CaseService:
                 direction="outbound", author_type="human", visibility="public", channel="email"
             )
             event_type, event_data = "message.sent", {"delivery": "simulated"}
+            if req.from_draft_id is not None:
+                event_data.update(self._draft_usage(case, req.from_draft_id, req.body))
         elif req.kind == "internal_note":
             message = Message(
                 direction="internal", author_type="human", visibility="internal", channel="note"
@@ -371,6 +374,7 @@ class CaseService:
                 direction="inbound", author_type="customer", visibility="public", channel="email"
             )
             event_type, event_data = "message.received", {}
+        event_data = dict(event_data)
 
         message.tenant_id = tenant_id
         message.case_id = case.id
@@ -402,6 +406,29 @@ class CaseService:
         case.updated_at = utcnow()  # marks the case changed, so its version is bumped
         self.commit_case(case)
         return message
+
+    def _draft_usage(self, case: Case, draft_id: uuid.UUID, sent_body: str) -> dict[str, Any]:
+        """How a sent reply relates to the AI draft it started from.
+
+        `draftEdited` (did the agent change the draft before sending?) is the
+        most useful quality signal for AI drafting: unedited drafts mean the
+        template and model are doing their job.
+        """
+        draft = self.session.get(Message, draft_id)
+        if draft is None or draft.case_id != case.id or draft.author_type != "ai":
+            raise NotFoundError(f"Draft {draft_id} not found on this case.")
+
+        def normalize(text: str) -> str:
+            return " ".join(text.split())
+
+        return {
+            "fromDraftId": str(draft.id),
+            "draftEdited": normalize(draft.body) != normalize(sent_body),
+            "draftModel": draft.ai.get("served_by"),
+            "draftTemplates": [
+                f"{t.get('name')} v{t.get('version')}" for t in draft.ai.get("templates", [])
+            ],
+        }
 
     def apply_transition(
         self,

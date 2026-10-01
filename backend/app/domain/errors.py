@@ -26,5 +26,17 @@ class RoutingError(DomainError):
     """Automatic routing or a reroute isn't possible for this case/queue. → 409"""
 
 
+class AIUnavailableError(DomainError):
+    """AI drafting isn't configured (no Anthropic API key). → 503"""
+
+
+class AIDisabledError(DomainError):
+    """AI drafting can't run here (turned off, case closed, or a template needs fixing). → 409"""
+
+
+class AIDraftFailedError(DomainError):
+    """The model call failed or was declined; message is safe to show. → 502"""
+
+
 class ConflictError(DomainError):
     """Someone else changed the record first (stale version). → 409"""
