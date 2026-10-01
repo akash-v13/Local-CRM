@@ -1,0 +1,99 @@
+# Runs on every pull request and every push to main.
+# Three independent jobs, so one failure doesn't hide the others:
+#   backend     formatting, lint, strict type check, tests (SQLite, no services needed)
+#   migrations  Alembic against a real Postgres: upgrade, drift check, downgrade, upgrade
+#   frontend    type check, component tests, production build
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint, types, tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install dependencies (exactly as locked)
+        run: uv sync --frozen
+      - name: Formatting
+        run: uv run ruff format --check .
+      - name: Lint
+        run: uv run ruff check .
+      - name: Type check (strict)
+        run: uv run mypy app tests
+      - name: Tests
+        run: uv run pytest -q
+
+  migrations:
+    name: Migrations (real Postgres)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: resolve
+          POSTGRES_PASSWORD: resolve
+          POSTGRES_DB: resolve
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U resolve -d resolve"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+psycopg://resolve:resolve@localhost:5432/resolve
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv sync --frozen
+      - name: Upgrade to latest
+        run: uv run alembic upgrade head
+      - name: Models match migrations (no drift)
+        run: uv run alembic check
+      - name: Downgrade all the way
+        run: uv run alembic downgrade base
+      - name: Upgrade again
+        run: uv run alembic upgrade head
+
+  frontend:
+    name: Frontend (types, tests, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies (exactly as locked)
+        run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+      - name: Production build
+        run: npm run build
