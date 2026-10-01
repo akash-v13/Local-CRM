@@ -1,0 +1,13 @@
+{#---
+description: Refund complaints (not received, partial)
+max_words: 160
+must_include: refund
+must_not_include: within 24 hours, guaranteed
+---#}
+The customer is unhappy about a refund{% if case.subcategory %} ({{ case.subcategory | lower }}){% endif %}.
+
+1. Acknowledge that waiting for money back is stressful.
+2. State the refund's status exactly as the facts give it (amount, date issued, method). If the facts don't include it, say the team is checking and don't estimate.
+3. If a refund was issued, say how long banks typically take to show it only if the facts give that timeframe.
+
+Never promise a date or amount that isn't in the facts.

@@ -46,13 +46,22 @@ class Masker:
         self._reverse: dict[str, str] = {}
         self._counters: dict[str, int] = {}
         self._known: list[tuple[str, str]] = []
+        # What templates should use for the first name: its own placeholder, or the
+        # full name's when the name is a single word.
+        self.first_name_placeholder = "[CUSTOMER_NAME]"
         if customer_email:
             self._known.append((customer_email, "[CUSTOMER_EMAIL]"))
         if customer_name and customer_name.strip():
-            self._known.append((customer_name.strip(), "[CUSTOMER_NAME]"))
-            first = customer_name.strip().split()[0]
-            if len(first) > 1 and first != customer_name.strip():
+            full = customer_name.strip()
+            self._known.append((full, "[CUSTOMER_NAME]"))
+            first = full.split()[0]
+            if len(first) > 1 and first != full:
                 self._known.append((first, "[CUSTOMER_FIRST_NAME]"))
+                self.first_name_placeholder = "[CUSTOMER_FIRST_NAME]"
+        # Known values can be restored even if they never appeared in a masked text
+        # (e.g. the model greets the customer by the name given in the facts).
+        for value, placeholder in self._known:
+            self.mapping[placeholder] = value
 
     def _placeholder(self, kind: str, value: str) -> str:
         if value in self._reverse:

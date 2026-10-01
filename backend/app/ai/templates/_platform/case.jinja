@@ -1,0 +1,32 @@
+{#- The user message: case facts and the customer-visible conversation. Not editable by businesses. -#}
+<case_facts>
+Reference: {{ case.reference }}
+Category: {{ case.category_label }}
+Channel: {{ case.channel }}
+Queue: {{ case.queue or "none" }}
+Customer name: {% if customer.name %}known, use {{ customer.name }} / {{ customer.first_name }}{% else %}unknown, greet neutrally{% endif %}
+
+Customer tier: {{ customer.tier or "none" }}
+{% for key, value in case.attributes | dictsort %}
+{{ key }}: {{ value }}
+{% endfor %}
+{% for source, fields in enrichment_sources | dictsort %}
+From {{ source }}:
+{% for key, value in fields | dictsort %}
+  {{ key }}: {{ value }}
+{% endfor %}
+{% endfor %}
+Decided compensation: {{ decisions.compensation or "none; do not offer any" }}
+</case_facts>
+
+<conversation>
+{% for message in thread %}
+<message from="{{ message.from }}">
+{{ message.text }}
+</message>
+{% else %}
+(no messages)
+{% endfor %}
+</conversation>
+
+Write the next reply to the customer.

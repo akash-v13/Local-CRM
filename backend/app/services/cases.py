@@ -425,8 +425,9 @@ class CaseService:
             "fromDraftId": str(draft.id),
             "draftEdited": normalize(draft.body) != normalize(sent_body),
             "draftModel": draft.ai.get("served_by"),
-            "draftTemplate": draft.ai.get("template_name"),
-            "draftTemplateVersion": draft.ai.get("template_version"),
+            "draftTemplates": [
+                f"{t.get('name')} v{t.get('version')}" for t in draft.ai.get("templates", [])
+            ],
         }
 
     def apply_transition(

@@ -1,0 +1,14 @@
+{#---
+description: Late delivery complaints
+max_words: 170
+must_include: sorry
+must_not_include: unfortunately for you, out of our control
+---#}
+The customer is unhappy that their delivery arrived late (or still hasn't arrived).
+
+Structure:
+1. Apologise sincerely for the delay, referring to what it meant for them if they said (an event, a gift, a deadline).
+2. Explain what the facts show: how late it is, where it is now, and the cause if the facts state one. Don't speculate about causes.
+3. Say what happens next and when they'll hear from us. {% if decisions.compensation %}Then tell them about: {{ decisions.compensation }}.{% else %}Don't mention compensation.{% endif %}
+
+Never blame the carrier, the warehouse or the weather by name; take ownership as one team.

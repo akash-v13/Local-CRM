@@ -1,68 +1,116 @@
-"""Reply templates, AI drafts on cases, and cost projections.
+"""Prompt templates, AI drafts on cases, and cost projections.
 
-The drafting pipeline (also used by the template test lab):
+The drafting pipeline (also used by the template test lab and preview):
 
-    case/sample ──► DraftInput ──► mask personal data ──► prompt
-        ──► Claude (structured output) ──► unmask ──► checks + warnings ──► DraftInfo
+    case/sample ──► DraftInput ──► masked context ──► layered Jinja templates
+        (baseline + queue persona + case type) ──► Claude (structured output)
+        ──► unmask ──► checks + warnings ──► DraftInfo
 """
 
 import uuid
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
 from statistics import mean
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.ai.checks import run_checks
+from app.ai.context import DraftInput, build_context
 from app.ai.drafter import DraftError, DraftWriter
-from app.ai.models import MODELS, TYPICAL_OUTPUT_TOKENS, Usage, cost_usd, estimate_tokens
+from app.ai.engine import (
+    BuiltPrompt,
+    Checks,
+    StoredTemplate,
+    TemplateError,
+    build_prompt,
+    category_names,
+    default_files,
+    is_valid_name,
+    kind_of,
+    persona_names,
+    validate,
+)
+from app.ai.models import MODELS, TYPICAL_OUTPUT_TOKENS, Effort, Usage, cost_usd, estimate_tokens
 from app.ai.pii import Masker, leftover_placeholders, unexpected_pii, unmask
-from app.ai.prompts import DraftInput, TemplateSpec, build_system, build_user
 from app.domain.errors import AIDisabledError, AIDraftFailedError, ConflictError, NotFoundError
 from app.domain.lifecycle import CaseStatus
-from app.domain.routing import evaluate_criteria
+from app.domain.taxonomy import DEFAULT_TAXONOMY
 from app.models import (
     Case,
     CaseEvent,
     Message,
-    ReplyTemplate,
-    ReplyTemplateVersion,
+    PromptTemplate,
+    PromptTemplateVersion,
+    Queue,
     SampleCase,
     TemplateTestRun,
     Tenant,
 )
 from app.models.base import utcnow
-from app.repositories import CaseRepository, MessageRepository, TenantRepository
+from app.repositories import CaseRepository, MessageRepository, QueueRepository, TenantRepository
 from app.schemas import (
     CheckResultRead,
     CostProjection,
     CostProjectionRow,
+    CoverageRow,
     DraftInfo,
-    MatchCriteria,
-    ReplyTemplateRead,
-    ReplyTemplateWrite,
-    TemplateContent,
-    TemplateVersionRead,
+    LayerRead,
+    PromptPreview,
+    PromptTemplateRead,
+    PromptTemplateVersionRead,
+    PromptTemplateWrite,
+    QueueSettings,
+    TemplateChecks,
+    TemplateOverride,
+    TemplateRef,
+    TemplateVariable,
 )
-from app.services.routing import case_context, enrichment_data
+from app.services.routing import enrichment_data
 
-DEFAULT_TEMPLATE_NAME = "Default reply"
-DEFAULT_TEMPLATE = TemplateContent(
-    model="claude-sonnet-5",
-    effort="low",
-    instructions=(
-        "Write a short, warm, professional reply. Acknowledge the customer's concern in your own "
-        "words, explain what the facts show and what happens next, and close politely. "
-        "Keep it to 2-4 short paragraphs."
-    ),
-    max_words=180,
-)
-
-# Typical size of the per-case part of a prompt, for estimates before anything has run.
+# Typical size of the per-case user message, for estimates before anything has run.
 TYPICAL_CASE_PROMPT_TOKENS = 700
+
+VARIABLE_REFERENCE = [
+    TemplateVariable(path="business.name", description="Your business name", example="Acme Store"),
+    TemplateVariable(path="case.type", description="Case type", example="Complaint"),
+    TemplateVariable(path="case.category", description="Category", example="Delivery"),
+    TemplateVariable(path="case.subcategory", description="Subcategory", example="Late delivery"),
+    TemplateVariable(path="case.queue", description="Queue name", example="General"),
+    TemplateVariable(path="case.channel", description="How the case arrived", example="webform"),
+    TemplateVariable(path="case.number", description="Case number", example="1790812345678901"),
+    TemplateVariable(
+        path="case.attributes",
+        description="Custom fields from intake (dict)",
+        example="case.attributes.orderNumber",
+    ),
+    TemplateVariable(
+        path="customer.name",
+        description="Name placeholder, or none if unknown",
+        example="[CUSTOMER_NAME]",
+    ),
+    TemplateVariable(
+        path="customer.first_name",
+        description="First-name placeholder, or none",
+        example="[CUSTOMER_FIRST_NAME]",
+    ),
+    TemplateVariable(
+        path="customer.tier", description="Loyalty / value tier, or none", example="Gold"
+    ),
+    TemplateVariable(
+        path="enrichment",
+        description="Connector data: enrichment.<connector key>.<field>. Guard with `is defined`.",
+        example="enrichment.shop_orders.daysLate",
+    ),
+    TemplateVariable(
+        path="decisions.compensation",
+        description="Decided compensation, or none",
+        example="none yet",
+    ),
+    TemplateVariable(path="latest_message", description="The customer's latest message (masked)"),
+    TemplateVariable(path="thread", description="Customer-visible messages: list of {from, text}"),
+]
 
 
 # ----- inputs -----------------------------------------------------------------------------
@@ -70,18 +118,19 @@ TYPICAL_CASE_PROMPT_TOKENS = 700
 
 def draft_input_from_case(case: Case, messages: Sequence[Message]) -> DraftInput:
     """Only customer-visible messages go to the model (no internal notes, no earlier drafts)."""
-    thread: list[tuple[str, str]] = []
-    for m in messages:
-        if m.visibility != "public":
-            continue
-        thread.append(("customer" if m.direction == "inbound" else "agent", m.body))
-    names = {
+    thread = [
+        ("customer" if m.direction == "inbound" else "agent", m.body)
+        for m in messages
+        if m.visibility == "public"
+    ]
+    labels = {
         key: str(result.get("connectorName") or key)
         for key, result in case.enrichment.items()
         if isinstance(result, dict)
     }
     return DraftInput(
         reference=f"Case {case.case_number}",
+        case_number=case.case_number,
         channel=case.channel,
         category=case.category.get("effective"),
         queue_name=case.queue.name if case.queue else None,
@@ -89,7 +138,8 @@ def draft_input_from_case(case: Case, messages: Sequence[Message]) -> DraftInput
         customer_email=case.customer.email,
         customer_tier=case.customer.tier,
         attributes=dict(case.attributes),
-        enrichment={names.get(k, k): v for k, v in enrichment_data(case).items()},
+        enrichment=enrichment_data(case),
+        enrichment_labels=labels,
         thread=thread,
     )
 
@@ -97,6 +147,7 @@ def draft_input_from_case(case: Case, messages: Sequence[Message]) -> DraftInput
 def draft_input_from_sample(sample: SampleCase) -> DraftInput:
     return DraftInput(
         reference=f"Sample: {sample.name}",
+        case_number=None,
         channel=sample.channel,
         category=dict(sample.category) or None,
         queue_name=sample.queue_name,
@@ -104,7 +155,8 @@ def draft_input_from_sample(sample: SampleCase) -> DraftInput:
         customer_email=None,
         customer_tier=sample.customer_tier,
         attributes={},
-        enrichment={"Case data": dict(sample.facts)} if sample.facts else {},
+        enrichment={"case_data": dict(sample.facts)} if sample.facts else {},
+        enrichment_labels={"case_data": "Case data"},
         thread=[("customer", sample.message)],
     )
 
@@ -112,23 +164,44 @@ def draft_input_from_sample(sample: SampleCase) -> DraftInput:
 # ----- the pipeline -------------------------------------------------------------------------
 
 
+def prepare(
+    templates: Mapping[str, StoredTemplate],
+    business_name: str,
+    draft_input: DraftInput,
+    pinned: str | None = None,
+) -> tuple[BuiltPrompt, Masker]:
+    """Mask the input and render the layered prompt. Raises TemplateError."""
+    masker = Masker(draft_input.customer_name, draft_input.customer_email)
+    context = build_context(business_name, draft_input, masker)
+    return build_prompt(templates, context, pinned), masker
+
+
+class TemplateDraftError(DraftError):
+    """The prompt couldn't be built: a template needs fixing (not a model failure)."""
+
+
 def generate_draft(
     writer: DraftWriter,
     *,
+    templates: Mapping[str, StoredTemplate],
     business_name: str,
-    template_name: str,
-    template_id: uuid.UUID | None,
-    template_version: int | None,
-    content: TemplateContent,
     draft_input: DraftInput,
+    model: str,
+    effort: Effort,
+    pinned: str | None = None,
 ) -> DraftInfo:
-    """Mask → prompt → model → unmask → checks. Raises DraftError on failure."""
-    masker = Masker(draft_input.customer_name, draft_input.customer_email)
-    spec = TemplateSpec(template_name, content.instructions, content.rules, content.example_reply)
-    system = build_system(business_name, spec)
-    user = build_user(draft_input, masker)
+    """Prompt → model → unmask → checks. Raises DraftError (incl. template errors)."""
+    try:
+        prompt, masker = prepare(templates, business_name, draft_input, pinned)
+    except TemplateError as exc:
+        raise TemplateDraftError(f"Prompt template problem in {exc}") from exc
 
-    result = writer.write(model=content.model, effort=content.effort, system=system, user=user)
+    result = writer.write(
+        model=model,
+        effort=effort,
+        system=[prompt.system_platform, prompt.system_layers],
+        user=prompt.user,
+    )
     reply = unmask(result.output.reply, masker.mapping).strip()
 
     warnings: list[str] = []
@@ -145,16 +218,16 @@ def generate_draft(
 
     checks = run_checks(
         reply,
-        max_words=content.max_words,
-        must_include=content.must_include,
-        must_not_include=content.must_not_include,
+        max_words=prompt.checks.max_words,
+        must_include=prompt.checks.must_include,
+        must_not_include=prompt.checks.must_not_include,
     )
     return DraftInfo(
         model=result.model,
         served_by=result.served_by,
-        template_id=template_id,
-        template_name=template_name,
-        template_version=template_version,
+        templates=[
+            TemplateRef(layer=x.layer, name=x.name, version=x.version) for x in prompt.layers
+        ],
         reply=reply,
         facts_used=result.output.facts_used,
         needs_attention=result.output.needs_human_attention,
@@ -170,224 +243,319 @@ def generate_draft(
 
 
 def estimate_cost(
-    business_name: str, name: str, content: TemplateContent, draft_input: DraftInput, model: str
+    templates: Mapping[str, StoredTemplate],
+    business_name: str,
+    draft_input: DraftInput,
+    model: str,
+    pinned: str | None = None,
 ) -> float:
     """Planning estimate for one draft (no caching assumed, ~4 chars/token)."""
-    spec = TemplateSpec(name, content.instructions, content.rules, content.example_reply)
-    prompt = build_system(business_name, spec) + build_user(draft_input, Masker(None, None))
-    output = int(content.max_words * 1.5) if content.max_words else TYPICAL_OUTPUT_TOKENS
-    usage = Usage(input_tokens=estimate_tokens(prompt), output_tokens=output)
-    return cost_usd(model, usage)
+    try:
+        prompt, _ = prepare(templates, business_name, draft_input, pinned)
+        text = prompt.system_platform + prompt.system_layers + prompt.user
+        limit = prompt.checks.max_words
+    except TemplateError:
+        text, limit = "", None
+    output = int(limit * 1.5) if limit else TYPICAL_OUTPUT_TOKENS
+    return cost_usd(model, Usage(input_tokens=estimate_tokens(text) or 1, output_tokens=output))
+
+
+def _to_checks(source: TemplateChecks | PromptTemplateVersion) -> Checks:
+    return Checks(
+        max_words=source.max_words,
+        must_include=list(source.must_include),
+        must_not_include=list(source.must_not_include),
+    )
+
+
+def queue_ai_settings(queue: Queue | None) -> tuple[str, Effort]:
+    settings = QueueSettings.model_validate(dict(queue.settings) if queue else {})
+    return settings.ai_model, settings.ai_effort
 
 
 # ----- templates ----------------------------------------------------------------------------
 
 
-def _version_read(v: ReplyTemplateVersion) -> TemplateVersionRead:
-    return TemplateVersionRead.model_validate(v)
-
-
-def content_of(v: ReplyTemplateVersion) -> TemplateContent:
-    return TemplateContent.model_validate({f: getattr(v, f) for f in TemplateContent.model_fields})
-
-
-@dataclass
-class SelectedTemplate:
-    template: ReplyTemplate
-    version: ReplyTemplateVersion
-
-
-class ReplyTemplateService:
+class PromptTemplateService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.tenants = TenantRepository(session)
+        self.queues = QueueRepository(session)
 
-    def _require_tenant(self, tenant_id: uuid.UUID) -> Tenant:
+    def _tenant(self, tenant_id: uuid.UUID) -> Tenant:
         tenant = self.tenants.get(tenant_id)
         if tenant is None:
             raise NotFoundError(f"Tenant {tenant_id} not found.")
         return tenant
 
-    def versions(self, template_id: uuid.UUID) -> list[ReplyTemplateVersion]:
-        stmt = (
-            select(ReplyTemplateVersion)
-            .where(ReplyTemplateVersion.template_id == template_id)
-            .order_by(ReplyTemplateVersion.version.desc())
+    def ensure_defaults(self, tenant_id: uuid.UUID, *, commit: bool = True) -> None:
+        """Add any starter template the tenant doesn't have (never overwrites edits)."""
+        existing = set(
+            self.session.scalars(
+                select(PromptTemplate.name).where(PromptTemplate.tenant_id == tenant_id)
+            ).all()
         )
-        return list(self.session.scalars(stmt).all())
+        added = False
+        for name, file in default_files().items():
+            if name in existing:
+                continue
+            template = PromptTemplate(
+                tenant_id=tenant_id,
+                name=name,
+                kind=kind_of(name),
+                description=file.description,
+                current_version=1,
+            )
+            self.session.add(template)
+            self.session.flush()
+            self.session.add(
+                PromptTemplateVersion(
+                    template_id=template.id,
+                    version=1,
+                    source=file.source,
+                    max_words=file.checks.max_words,
+                    must_include=file.checks.must_include,
+                    must_not_include=file.checks.must_not_include,
+                    created_by="starter pack",
+                )
+            )
+            added = True
+        if added and commit:
+            self.session.commit()
 
-    def to_read(self, template: ReplyTemplate) -> ReplyTemplateRead:
-        versions = self.versions(template.id)
-        current = next(v for v in versions if v.version == template.current_version)
-        return ReplyTemplateRead(
-            id=template.id,
-            name=template.name,
-            description=template.description,
-            priority=template.priority,
-            is_active=template.is_active,
-            match_criteria=MatchCriteria.model_validate(dict(template.match_criteria)),
-            current_version=template.current_version,
-            current=_version_read(current),
-            versions=[_version_read(v) for v in versions],
-            created_at=template.created_at,
-            updated_at=template.updated_at,
-        )
+    def list_templates(self, tenant_id: uuid.UUID) -> Sequence[PromptTemplate]:
+        self._tenant(tenant_id)
+        self.ensure_defaults(tenant_id)
+        stmt = select(PromptTemplate).where(PromptTemplate.tenant_id == tenant_id)
+        return self.session.scalars(stmt.order_by(PromptTemplate.name)).all()
 
-    def list_templates(
-        self, tenant_id: uuid.UUID, active_only: bool = False
-    ) -> Sequence[ReplyTemplate]:
-        self._require_tenant(tenant_id)
-        stmt = select(ReplyTemplate).where(ReplyTemplate.tenant_id == tenant_id)
-        if active_only:
-            stmt = stmt.where(ReplyTemplate.is_active.is_(True))
-        return self.session.scalars(
-            stmt.order_by(ReplyTemplate.priority, ReplyTemplate.created_at)
-        ).all()
-
-    def get(self, tenant_id: uuid.UUID, template_id: uuid.UUID) -> ReplyTemplate:
-        stmt = select(ReplyTemplate).where(
-            ReplyTemplate.tenant_id == tenant_id, ReplyTemplate.id == template_id
+    def get(self, tenant_id: uuid.UUID, name: str) -> PromptTemplate:
+        self.ensure_defaults(tenant_id)
+        stmt = select(PromptTemplate).where(
+            PromptTemplate.tenant_id == tenant_id, PromptTemplate.name == name
         )
         template = self.session.scalars(stmt).one_or_none()
         if template is None:
-            raise NotFoundError(f"Reply template {template_id} not found.")
+            raise NotFoundError(f"Template {name} not found.")
         return template
 
-    def create(
-        self, tenant_id: uuid.UUID, data: ReplyTemplateWrite, actor_id: str | None = None
-    ) -> ReplyTemplate:
-        self._require_tenant(tenant_id)
-        template = ReplyTemplate(
-            tenant_id=tenant_id,
-            name=data.name,
-            description=data.description,
-            priority=data.priority,
-            is_active=data.is_active,
-            match_criteria=data.match_criteria.model_dump(),
-            current_version=1,
+    def versions(self, template: PromptTemplate) -> list[PromptTemplateVersion]:
+        stmt = (
+            select(PromptTemplateVersion)
+            .where(PromptTemplateVersion.template_id == template.id)
+            .order_by(PromptTemplateVersion.version.desc())
         )
-        self.session.add(template)
-        try:
-            self.session.flush()  # assigns template.id; a duplicate name fails here
-        except IntegrityError as exc:
-            self.session.rollback()
-            raise ConflictError(f"A reply template named '{data.name}' already exists.") from exc
-        self._add_version(template, 1, data, actor_id)
-        self._commit(data.name)
-        return template
+        return list(self.session.scalars(stmt).all())
 
-    def update(
-        self,
-        tenant_id: uuid.UUID,
-        template_id: uuid.UUID,
-        data: ReplyTemplateWrite,
-        actor_id: str | None = None,
-    ) -> ReplyTemplate:
-        """Settings change in place; content changes create a new version (old ones are kept)."""
-        template = self.get(tenant_id, template_id)
-        template.name = data.name
+    def current(self, template: PromptTemplate) -> PromptTemplateVersion:
+        return next(v for v in self.versions(template) if v.version == template.current_version)
+
+    def to_read(self, template: PromptTemplate) -> PromptTemplateRead:
+        versions = self.versions(template)
+        current = next(v for v in versions if v.version == template.current_version)
+        default = default_files().get(template.name)
+        return PromptTemplateRead(
+            name=template.name,
+            kind=template.kind,
+            description=template.description,
+            current_version=template.current_version,
+            current=PromptTemplateVersionRead.model_validate(current),
+            versions=[PromptTemplateVersionRead.model_validate(v) for v in versions],
+            is_default_content=bool(
+                default
+                and default.source.strip() == current.source.strip()
+                and default.checks
+                == Checks(
+                    current.max_words, list(current.must_include), list(current.must_not_include)
+                )
+            ),
+            updated_at=template.updated_at,
+        )
+
+    def save(
+        self, tenant_id: uuid.UUID, name: str, data: PromptTemplateWrite, actor_id: str | None
+    ) -> PromptTemplate:
+        """Create the template, or add a version if the source or checks changed."""
+        self._tenant(tenant_id)
+        if not is_valid_name(name):
+            raise ConflictError(
+                "Template names look like base.jinja, queue/<Queue>.jinja or "
+                "category/<Type>_<Category>_<Subcategory>.jinja (letters, digits, _)."
+            )
+        problems = validate(data.source)
+        if problems:
+            raise ConflictError("The template can't be saved:\n" + "\n".join(problems))
+        self.ensure_defaults(tenant_id, commit=False)
+
+        stmt = select(PromptTemplate).where(
+            PromptTemplate.tenant_id == tenant_id, PromptTemplate.name == name
+        )
+        template = self.session.scalars(stmt).one_or_none()
+        if template is None:
+            template = PromptTemplate(
+                tenant_id=tenant_id, name=name, kind=kind_of(name), current_version=0
+            )
+            self.session.add(template)
+            try:
+                self.session.flush()
+            except IntegrityError as exc:
+                self.session.rollback()
+                raise ConflictError(f"Template {name} already exists.") from exc
+        else:
+            current = self.current(template)
+            unchanged = current.source.strip() == data.source.strip() and _to_checks(
+                current
+            ) == _to_checks(data)
+            if unchanged:
+                template.description = data.description
+                self.session.commit()
+                return template
+
         template.description = data.description
-        template.priority = data.priority
-        template.is_active = data.is_active
-        template.match_criteria = data.match_criteria.model_dump()
-        current = next(
-            v for v in self.versions(template.id) if v.version == template.current_version
-        )
-        new_content = TemplateContent.model_validate(
-            data.model_dump(include=set(TemplateContent.model_fields))
-        )
-        if new_content != content_of(current):
-            template.current_version += 1
-            self._add_version(template, template.current_version, data, actor_id)
-        template.updated_at = utcnow()
-        self._commit(data.name)
-        return template
-
-    def _add_version(
-        self, template: ReplyTemplate, version: int, data: TemplateContent, actor_id: str | None
-    ) -> None:
-        fields = data.model_dump(include=set(TemplateContent.model_fields))
+        template.current_version += 1
         self.session.add(
-            ReplyTemplateVersion(
-                template_id=template.id, version=version, created_by=actor_id, **fields
+            PromptTemplateVersion(
+                template_id=template.id,
+                version=template.current_version,
+                source=data.source.strip() + "\n",
+                max_words=data.max_words,
+                must_include=data.must_include,
+                must_not_include=data.must_not_include,
+                created_by=actor_id,
             )
         )
+        template.updated_at = utcnow()
+        self.session.commit()
+        return template
 
-    def _commit(self, name: str) -> None:
+    def store(
+        self, tenant_id: uuid.UUID, override: TemplateOverride | None = None
+    ) -> dict[str, StoredTemplate]:
+        """Current version of every template, with an unsaved edit swapped in if given."""
+        self.ensure_defaults(tenant_id)
+        templates: dict[str, StoredTemplate] = {}
+        for t in self.session.scalars(
+            select(PromptTemplate).where(PromptTemplate.tenant_id == tenant_id)
+        ).all():
+            v = self.current(t)
+            templates[t.name] = StoredTemplate(t.name, v.version, v.source, _to_checks(v))
+        if override is not None:
+            templates[override.name] = StoredTemplate(
+                override.name, None, override.source, _to_checks(override)
+            )
+        return templates
+
+    def preview(
+        self, tenant_id: uuid.UUID, draft_input: DraftInput, override: TemplateOverride | None
+    ) -> PromptPreview:
+        """The exact prompt a draft would use, layer by layer. No model call."""
+        tenant = self._tenant(tenant_id)
+        queue = self._queue_named(tenant_id, draft_input.queue_name)
+        model, effort = queue_ai_settings(queue)
+        if override is not None:
+            problems = validate(override.source)
+            if problems:
+                return PromptPreview(ok=False, error=f"{override.name}: " + " ".join(problems))
         try:
-            self.session.commit()
-        except IntegrityError as exc:
-            self.session.rollback()
-            if "name" in str(exc.orig):
-                raise ConflictError(f"A reply template named '{name}' already exists.") from exc
-            raise
-
-    def create_default(self, tenant_id: uuid.UUID) -> None:
-        """The catch-all template every new tenant starts with (not committed here)."""
-        template = ReplyTemplate(
-            tenant_id=tenant_id,
-            name=DEFAULT_TEMPLATE_NAME,
-            description="Used when no other template matches.",
-            priority=1000,
-            is_active=True,
-            match_criteria={"match": "all", "conditions": []},
-            current_version=1,
+            prompt, _ = prepare(
+                self.store(tenant_id, override),
+                tenant.name,
+                draft_input,
+                pinned=override.name if override else None,
+            )
+        except TemplateError as exc:
+            return PromptPreview(ok=False, error=str(exc))
+        return PromptPreview(
+            ok=True,
+            system_platform=prompt.system_platform,
+            layers=[
+                LayerRead(layer=x.layer, name=x.name, version=x.version, text=x.text)
+                for x in prompt.layers
+            ],
+            user=prompt.user,
+            checks=TemplateChecks(
+                max_words=prompt.checks.max_words,
+                must_include=prompt.checks.must_include,
+                must_not_include=prompt.checks.must_not_include,
+            ),
+            model=model,
+            effort=effort,
         )
-        self.session.add(template)
-        self.session.flush()
-        self._add_version(template, 1, DEFAULT_TEMPLATE, "system")
 
-    def select_for(self, case: Case, customer_texts: list[str]) -> SelectedTemplate:
-        """First active template (by priority) whose criteria match the case."""
-        context = case_context(case, customer_texts)
-        for template in self.list_templates(case.tenant_id, active_only=True):
-            matched, _ = evaluate_criteria(dict(template.match_criteria), context)
-            if matched:
-                version = next(
-                    v for v in self.versions(template.id) if v.version == template.current_version
+    def _queue_named(self, tenant_id: uuid.UUID, name: str | None) -> Queue | None:
+        if not name:
+            return None
+        return next((q for q in self.queues.list(tenant_id) if q.name == name), None)
+
+    def coverage(self, tenant_id: uuid.UUID) -> list[CoverageRow]:
+        """For every queue and every taxonomy category: which template it uses now."""
+        names = set(self.store(tenant_id))
+        rows: list[CoverageRow] = []
+        for queue in self.queues.list(tenant_id):
+            chain = persona_names(queue.name)
+            used = next(n for n in chain if n in names)
+            rows.append(
+                CoverageRow(
+                    kind="persona",
+                    label=queue.name,
+                    template=used,
+                    specific=used == chain[0],
+                    expected_name=chain[0],
                 )
-                return SelectedTemplate(template, version)
-        raise AIDisabledError(
-            "No active reply template matches this case. Add one in Operations → Reply templates."
-        )
+            )
+        for t in DEFAULT_TAXONOMY:
+            for c in t["categories"]:
+                for sub in c["subcategories"]:
+                    chain = category_names(
+                        {"type": t["name"], "category": c["name"], "subcategory": sub["name"]}
+                    )
+                    used = next(n for n in chain if n in names)
+                    rows.append(
+                        CoverageRow(
+                            kind="category",
+                            label=f"{t['name']} › {c['name']} › {sub['name']}",
+                            template=used,
+                            specific=used != chain[-1],
+                            expected_name=chain[0],
+                        )
+                    )
+        return rows
 
     # ----- cost projection ------------------------------------------------------------------
 
-    def projection(
-        self, tenant_id: uuid.UUID, template_id: uuid.UUID, monthly_volume: int
-    ) -> CostProjection:
-        """Cost per reply and per month for each model.
+    def projection(self, tenant_id: uuid.UUID, name: str, monthly_volume: int) -> CostProjection:
+        """Cost per reply and per month for each model, for drafts that use this template.
 
-        "measured" uses real token usage from this template's drafts and test
-        runs (so it includes prompt-caching savings); "estimated" is used for
+        "measured" uses real token usage from drafts and test runs that used this
+        template (so it includes prompt-caching savings); "estimated" is used for
         models with no history yet.
         """
-        tenant = self._require_tenant(tenant_id)
-        template = self.get(tenant_id, template_id)
-        current = content_of(
-            next(v for v in self.versions(template.id) if v.version == template.current_version)
-        )
+        template = self.get(tenant_id, name)
+        current = self.current(template)
 
         samples: dict[str, list[DraftInfo]] = {m: [] for m in MODELS}
-        for info in self._history(tenant_id, template_id):
+        for info in self._history(tenant_id, name):
             if info.served_by in samples:
                 samples[info.served_by].append(info)
 
-        spec = TemplateSpec(
-            template.name, current.instructions, current.rules, current.example_reply
+        # Estimate: this template plus the baseline and default persona, the platform
+        # rules (~400 tokens) and a typical case.
+        store = self.store(tenant_id)
+        layer_text = "\n".join(
+            store[n].source for n in (name, "base.jinja", "queue/_default.jinja") if n in store
         )
-        system_tokens = estimate_tokens(build_system(tenant.name, spec))
-        est_input = system_tokens + TYPICAL_CASE_PROMPT_TOKENS
+        est_input = estimate_tokens(layer_text) + 400 + TYPICAL_CASE_PROMPT_TOKENS
         est_output = int(current.max_words * 1.5) if current.max_words else TYPICAL_OUTPUT_TOKENS
 
         rows: list[CostProjectionRow] = []
         for model_id, model_info in MODELS.items():
             history = samples[model_id]
+            source: Literal["measured", "estimated"]
             if history:
                 per_reply = mean(d.cost_usd for d in history)
                 avg_in = mean(d.input_tokens + d.cache_read_tokens for d in history)
                 avg_out = mean(d.output_tokens for d in history)
-                source: Any = "measured"
+                source = "measured"
             else:
                 per_reply = cost_usd(
                     model_id, Usage(input_tokens=est_input, output_tokens=est_output)
@@ -410,19 +578,19 @@ class ReplyTemplateService:
             monthly_volume=monthly_volume,
             rows=rows,
             notes=[
-                "Measured costs come from real drafts and test runs of this template, "
+                "Measured costs come from real drafts and test runs that used this template, "
                 "including prompt-caching savings.",
                 "Estimates assume ~4 characters per token and no caching; run a test to "
                 "replace them with measurements.",
-                f"Template currently set to {MODELS[current.model].label}. "
-                "Effort and reply length change costs.",
+                "The model is set per queue (Operations → Queues → Handling). Effort and "
+                "reply length change costs.",
                 "Drafting that doesn't need an instant answer (e.g. overnight backlogs) can "
                 "use the Message Batches API at 50% of these prices.",
             ],
         )
 
-    def _history(self, tenant_id: uuid.UUID, template_id: uuid.UUID) -> list[DraftInfo]:
-        """Recent drafts (on cases and in test runs) produced by this template."""
+    def _history(self, tenant_id: uuid.UUID, name: str) -> list[DraftInfo]:
+        """Recent drafts (on cases and in test runs) that used this template."""
         infos: list[DraftInfo] = []
         drafts = self.session.scalars(
             select(Message)
@@ -430,21 +598,20 @@ class ReplyTemplateService:
             .order_by(Message.created_at.desc())
             .limit(500)
         ).all()
-        for m in drafts:
-            if m.ai.get("template_id") == str(template_id):
-                infos.append(DraftInfo.model_validate(m.ai))
         runs = self.session.scalars(
             select(TemplateTestRun)
-            .where(
-                TemplateTestRun.tenant_id == tenant_id, TemplateTestRun.template_id == template_id
-            )
+            .where(TemplateTestRun.tenant_id == tenant_id)
             .order_by(TemplateTestRun.created_at.desc())
             .limit(20)
         ).all()
-        for run in runs:
-            for r in run.results:
-                if r.get("ok") and r.get("draft"):
-                    infos.append(DraftInfo.model_validate(r["draft"]))
+        candidates: list[dict[str, Any]] = [dict(m.ai) for m in drafts]
+        candidates += [
+            r["draft"] for run in runs for r in run.results if r.get("ok") and r.get("draft")
+        ]
+        for raw in candidates:
+            info = DraftInfo.model_validate(raw)
+            if any(t.name == name for t in info.templates):
+                infos.append(info)
         return infos
 
 
@@ -457,7 +624,7 @@ class DraftService:
         self.tenants = TenantRepository(session)
         self.cases = CaseRepository(session)
         self.messages = MessageRepository(session)
-        self.templates = ReplyTemplateService(session)
+        self.templates = PromptTemplateService(session)
 
     def draft_for_case(
         self, tenant_id: uuid.UUID, case_number: int, writer: DraftWriter, actor_id: str | None
@@ -474,15 +641,12 @@ class DraftService:
                 f"AI drafting is turned off for {where}. A manager can turn it on in "
                 'Operations → Queues & routing ("Allow AI to draft replies").'
             )
+        model, effort = queue_ai_settings(queue)
 
         tenant = self.tenants.get(tenant_id)
         assert tenant is not None
-        messages = self.messages.list_for_case(tenant_id, case.id)
-        customer_texts = [m.body for m in messages if m.author_type == "customer"]
-        selected = self.templates.select_for(case, customer_texts)
-        draft_input = draft_input_from_case(case, messages)
-        template_name, template_id = selected.template.name, selected.template.id
-        version, content = selected.version.version, content_of(selected.version)
+        templates = self.templates.store(tenant_id)
+        draft_input = draft_input_from_case(case, self.messages.list_for_case(tenant_id, case.id))
         case_id = case.id
         # End the read transaction before calling the model (no DB connection held while waiting).
         self.session.commit()
@@ -490,13 +654,14 @@ class DraftService:
         try:
             info = generate_draft(
                 writer,
+                templates=templates,
                 business_name=tenant.name,
-                template_name=template_name,
-                template_id=template_id,
-                template_version=version,
-                content=content,
                 draft_input=draft_input,
+                model=model,
+                effort=effort,
             )
+        except TemplateDraftError as exc:
+            raise AIDisabledError(str(exc)) from exc
         except DraftError as exc:
             raise AIDraftFailedError(str(exc)) from exc
 
@@ -522,8 +687,7 @@ class DraftService:
                 actor_id=actor_id,
                 data={
                     "messageId": str(message.id),
-                    "template": template_name,
-                    "templateVersion": version,
+                    "templates": [f"{t.name} v{t.version}" for t in info.templates],
                     "model": info.served_by,
                     "costUsd": round(info.cost_usd, 6),
                     "needsAttention": info.needs_attention,

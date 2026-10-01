@@ -1,4 +1,4 @@
-"""Automated checks a reply template can define, applied to every draft.
+"""Automated checks prompt templates can define (merged across layers), applied to every draft.
 
 They make "does the model follow the template?" measurable:
 - max_words:        the reply must not be longer than this

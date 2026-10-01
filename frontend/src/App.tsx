@@ -12,8 +12,8 @@ import { OpsDashboardPage } from "./pages/ops/OpsDashboardPage";
 import { OpsLayout } from "./pages/ops/OpsLayout";
 import { QueueEditorPage } from "./pages/ops/QueueEditorPage";
 import { QueueListPage } from "./pages/ops/QueueListPage";
-import { ReplyTemplateEditorPage } from "./pages/ops/ReplyTemplateEditorPage";
-import { ReplyTemplateListPage } from "./pages/ops/ReplyTemplateListPage";
+import { PromptTemplateEditorPage } from "./pages/ops/PromptTemplateEditorPage";
+import { PromptTemplateListPage } from "./pages/ops/PromptTemplateListPage";
 import { SampleCaseEditorPage } from "./pages/ops/SampleCaseEditorPage";
 import { SampleCaseListPage } from "./pages/ops/SampleCaseListPage";
 import { WebformPage } from "./pages/WebformPage";
@@ -29,7 +29,7 @@ import { WebformPage } from "./pages/WebformPage";
  *   /ops/queues/:id   Operations Portal: edit a queue (+ routing test)
  *   /ops/connectors[/new|/:id]    Operations Portal: enrichment connectors
  *   /ops/credentials[/new|/:id]   Operations Portal: credentials (auth for connectors)
- *   /ops/templates[/new|/:id]     Operations Portal: AI reply templates (+ test lab, costs)
+ *   /ops/templates[/<name>]       Operations Portal: Jinja prompt templates (+ preview, test lab, costs)
  *   /ops/samples[/new|/:id]       Operations Portal: sample cases for the test lab
  */
 export function App() {
@@ -53,9 +53,8 @@ export function App() {
               <Route path="credentials" element={<CredentialListPage />} />
               <Route path="credentials/new" element={<CredentialEditorPage />} />
               <Route path="credentials/:credentialId" element={<CredentialEditorPage />} />
-              <Route path="templates" element={<ReplyTemplateListPage />} />
-              <Route path="templates/new" element={<ReplyTemplateEditorPage />} />
-              <Route path="templates/:templateId" element={<ReplyTemplateEditorPage />} />
+              <Route path="templates" element={<PromptTemplateListPage />} />
+              <Route path="templates/*" element={<PromptTemplateEditorPage />} />
               <Route path="samples" element={<SampleCaseListPage />} />
               <Route path="samples/new" element={<SampleCaseEditorPage />} />
               <Route path="samples/:sampleId" element={<SampleCaseEditorPage />} />

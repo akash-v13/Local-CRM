@@ -2,18 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 
 import { api, errorMessage } from "../api/client";
-import type { ModelId, ModelOption, ReplyTemplateWrite, TestRun, TestRunEstimate } from "../api/types";
+import type { EffortLevel, ModelId, ModelOption, TemplateOverride, TestRun, TestRunCreate, TestRunEstimate } from "../api/types";
 import { formatPct, formatUsd } from "../lib/format";
 import { useLoad } from "../lib/useLoad";
 import { CheckBadges } from "./DraftPanel";
 
 interface Props {
   tenantId: string;
-  templateId: string | null;
   agentId: string;
   models: ModelOption[];
   /** The template as currently edited, or a list of problems if the form isn't valid. */
-  buildTemplate: () => ReplyTemplateWrite | string[];
+  buildTemplate: () => TemplateOverride | string[];
   /** Called when a run finishes (so cost projections can refresh). */
   onRunFinished: () => void;
 }
@@ -24,13 +23,14 @@ interface Props {
  * Shows cost before running; afterwards compares models on rule checks,
  * consistency (how alike repeated drafts are), length, speed and cost.
  */
-export function TemplateTestLab({ tenantId, templateId, agentId, models, buildTemplate, onRunFinished }: Props) {
+export function TemplateTestLab({ tenantId, agentId, models, buildTemplate, onRunFinished }: Props) {
   const samples = useLoad(() => api.listSampleCases(tenantId), [tenantId]);
   const cases = useLoad(() => api.listCases(tenantId), [tenantId]);
   const [selectedModels, setSelectedModels] = useState<ModelId[]>(["claude-haiku-4-5", "claude-sonnet-5"]);
   const [sampleIds, setSampleIds] = useState<string[]>([]);
   const [caseNumbers, setCaseNumbers] = useState<number[]>([]);
   const [runs, setRuns] = useState(2);
+  const [effort, setEffort] = useState<EffortLevel>("low");
   const [estimate, setEstimate] = useState<TestRunEstimate>();
   const [run, setRun] = useState<TestRun>();
   const [error, setError] = useState<string>();
@@ -43,13 +43,13 @@ export function TemplateTestLab({ tenantId, templateId, agentId, models, buildTe
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only on first load
   }, [samples.data]);
 
-  function request() {
+  function request(): TestRunCreate | string[] {
     const template = buildTemplate();
     if (Array.isArray(template)) return template;
     return {
-      template_id: templateId,
       template,
       models: selectedModels,
+      effort,
       sample_ids: sampleIds,
       case_numbers: caseNumbers,
       runs_per_input: runs,
@@ -71,7 +71,7 @@ export function TemplateTestLab({ tenantId, templateId, agentId, models, buildTe
     }, 300);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run on selection changes
-  }, [selectedModels, sampleIds, caseNumbers, runs, canRun]);
+  }, [selectedModels, sampleIds, caseNumbers, runs, effort, canRun]);
 
   // Poll while running.
   useEffect(() => {
@@ -125,6 +125,15 @@ export function TemplateTestLab({ tenantId, templateId, agentId, models, buildTe
               {m.label} <span className="muted small">${m.input_per_mtok}/${m.output_per_mtok} per M tokens</span>
             </label>
           ))}
+          <label className="inline-field">
+            <span>Effort</span>
+            <select value={effort} onChange={(e) => setEffort(e.target.value as EffortLevel)}>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </label>
+          <p className="hint">Haiku ignores effort.</p>
         </fieldset>
         <fieldset>
           <legend>Sample cases</legend>

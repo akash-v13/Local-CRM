@@ -1,4 +1,4 @@
-"""The Claude models a reply template can use, with their prices and API differences.
+"""The Claude models a queue can draft with, with their prices and API differences.
 
 Prices are Anthropic first-party list prices in USD per million tokens.
 Prompt-cache writes cost 1.25x the input price (5-minute cache) and cache

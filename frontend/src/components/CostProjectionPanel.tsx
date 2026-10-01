@@ -5,13 +5,13 @@ import { formatUsd } from "../lib/format";
 import { useLoad } from "../lib/useLoad";
 
 /**
- * What this template costs per reply and per month on each model. Uses
- * measured usage from real drafts and test runs where available.
+ * What drafts using this template cost per reply and per month on each model.
+ * Uses measured usage from real drafts and test runs where available.
  */
-export function CostProjectionPanel({ tenantId, templateId, refreshKey }: { tenantId: string; templateId: string; refreshKey: number }) {
+export function CostProjectionPanel({ tenantId, templateName, refreshKey }: { tenantId: string; templateName: string; refreshKey: number }) {
   const [volume, setVolume] = useState("10000");
   const monthly = Math.max(1, Math.floor(Number(volume) || 1));
-  const projection = useLoad(() => api.costProjection(tenantId, templateId, monthly), [tenantId, templateId, monthly, refreshKey]);
+  const projection = useLoad(() => api.costProjection(tenantId, templateName, monthly), [tenantId, templateName, monthly, refreshKey]);
 
   return (
     <div className="cost-projection">

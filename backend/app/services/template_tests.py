@@ -1,8 +1,9 @@
 """Template test lab: sample cases, cost estimates, and test runs.
 
-A test run drafts replies for every (model × input × repeat) with the
-template *as currently edited* (saved or not), so a manager can compare
-models on quality, consistency and cost before changing anything for real.
+A test run drafts replies for every (model × input × repeat) with one
+template *as currently edited* (saved or not) in its layer, whatever the
+input's queue or category; the other layers resolve normally for each input. A manager
+can compare models on quality, consistency and cost before changing anything.
 
 Runs execute on the worker (job kind "template_test"), several drafts in
 parallel; results are saved as each one finishes so the UI shows progress.
@@ -19,23 +20,22 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.checks import consistency, word_count
+from app.ai.context import DraftInput
 from app.ai.drafter import DraftError, DraftWriter
 from app.ai.models import MODELS
-from app.ai.prompts import DraftInput
 from app.domain.errors import ConflictError, NotFoundError
 from app.models import Job, SampleCase, TemplateTestRun, Tenant
 from app.repositories import CaseRepository, MessageRepository, TenantRepository
 from app.schemas import (
     ModelSummary,
-    ReplyTemplateWrite,
     SampleCaseWrite,
-    TemplateContent,
     TestResult,
     TestRunCreate,
     TestRunEstimate,
     TestRunRead,
 )
 from app.services.replies import (
+    PromptTemplateService,
     draft_input_from_case,
     draft_input_from_sample,
     estimate_cost,
@@ -83,12 +83,6 @@ class SampleCaseService:
             self.session.rollback()
             raise ConflictError(f"A sample named '{data.name}' already exists.") from exc
         return sample
-
-
-def _content(template: ReplyTemplateWrite) -> TemplateContent:
-    return TemplateContent.model_validate(
-        template.model_dump(include=set(TemplateContent.model_fields))
-    )
 
 
 def summarize(results: list[TestResult], models: list[str]) -> list[ModelSummary]:
@@ -153,12 +147,12 @@ class TemplateTestService:
 
     def estimate(self, tenant_id: uuid.UUID, req: TestRunCreate) -> TestRunEstimate:
         tenant = self._tenant(tenant_id)
-        content = _content(req.template)
+        templates = PromptTemplateService(self.session).store(tenant_id, req.template)
         per_model: dict[str, float] = {}
         inputs = self.inputs(tenant_id, req)
         for model in req.models:
             per_model[model] = req.runs_per_input * sum(
-                estimate_cost(tenant.name, req.template.name, content, inp, model)
+                estimate_cost(templates, tenant.name, inp, model, pinned=req.template.name)
                 for _, _, inp in inputs
             )
         return TestRunEstimate(
@@ -171,8 +165,7 @@ class TemplateTestService:
         estimate = self.estimate(tenant_id, req)
         run = TemplateTestRun(
             tenant_id=tenant_id,
-            template_id=req.template_id,
-            template_version=None,
+            template_name=req.template.name,
             config=req.model_dump(mode="json"),
             status="pending",
             total_calls=estimate.total_calls,
@@ -198,12 +191,10 @@ class TemplateTestService:
             raise NotFoundError(f"Test run {run_id} not found.")
         return run
 
-    def recent(
-        self, tenant_id: uuid.UUID, template_id: uuid.UUID | None
-    ) -> Sequence[TemplateTestRun]:
+    def recent(self, tenant_id: uuid.UUID, template_name: str | None) -> Sequence[TemplateTestRun]:
         stmt = select(TemplateTestRun).where(TemplateTestRun.tenant_id == tenant_id)
-        if template_id:
-            stmt = stmt.where(TemplateTestRun.template_id == template_id)
+        if template_name:
+            stmt = stmt.where(TemplateTestRun.template_name == template_name)
         return self.session.scalars(
             stmt.order_by(TemplateTestRun.created_at.desc()).limit(10)
         ).all()
@@ -213,8 +204,7 @@ class TemplateTestService:
         results = [TestResult.model_validate(r) for r in run.results]
         return TestRunRead(
             id=run.id,
-            template_id=run.template_id,
-            template_version=run.template_version,
+            template_name=run.template_name,
             status=run.status,
             total_calls=run.total_calls,
             completed_calls=len(results),
@@ -252,11 +242,11 @@ def execute_test_run(
         tenant = session.get(Tenant, run.tenant_id)
         assert tenant is not None
         inputs = TemplateTestService(session).inputs(run.tenant_id, req)
+        templates = PromptTemplateService(session).store(run.tenant_id, req.template)
         run.status = "running"
         session.commit()
         run_id, business = run.id, tenant.name
 
-    content = _content(req.template)
     tasks = [
         (ref, label, inp, model, n)
         for model in req.models
@@ -269,12 +259,12 @@ def execute_test_run(
         try:
             info = generate_draft(
                 writer,
+                templates=templates,
                 business_name=business,
-                template_name=req.template.name,
-                template_id=req.template_id,
-                template_version=None,
-                content=content.model_copy(update={"model": model}),
                 draft_input=inp,
+                model=model,
+                effort=req.effort,
+                pinned=req.template.name,
             )
             return TestResult(
                 input_ref=ref, input_label=label, model=model, run=n, ok=True, draft=info

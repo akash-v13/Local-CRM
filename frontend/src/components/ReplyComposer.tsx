@@ -126,7 +126,7 @@ export function ReplyComposer({ caseDetail, agentId, onSent }: Props) {
             className="button ai"
             disabled={busy || drafting}
             onClick={() => void draftWithAi()}
-            title="Write a draft with the reply template that matches this case"
+            title="Write a draft with this case's queue persona and case-type templates"
           >
             {drafting ? "Drafting…" : draft ? "✨ Redraft" : "✨ Draft with AI"}
           </button>

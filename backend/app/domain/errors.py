@@ -31,7 +31,7 @@ class AIUnavailableError(DomainError):
 
 
 class AIDisabledError(DomainError):
-    """AI drafting is turned off for this case's queue, or nothing matches. → 409"""
+    """AI drafting can't run here (turned off, case closed, or a template needs fixing). → 409"""
 
 
 class AIDraftFailedError(DomainError):

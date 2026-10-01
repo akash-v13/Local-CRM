@@ -16,7 +16,7 @@ export function SampleCaseListPage() {
         <div>
           <h1>Sample cases</h1>
           <p className="muted">
-            Realistic customer messages with their facts, for testing reply templates. Keep a set that covers your common
+            Realistic customer messages with their facts, for testing prompt templates. Keep a set that covers your common
             and tricky cases, and use it to compare models and template versions consistently.
           </p>
         </div>

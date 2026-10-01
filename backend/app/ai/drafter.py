@@ -43,15 +43,17 @@ class DraftError(Exception):
 
 
 class DraftWriter(Protocol):
-    def write(self, *, model: str, effort: Effort, system: str, user: str) -> DraftResult: ...
+    def write(self, *, model: str, effort: Effort, system: list[str], user: str) -> DraftResult: ...
 
 
 class ClaudeDraftWriter:
     """Writes drafts with the Anthropic API.
 
     - Structured outputs (`output_format=DraftOutput`) guarantee a parseable reply.
-    - The system prompt is cached (`cache_control`): repeat drafts with the same
-      template reuse it at ~10% of the input price, once it's long enough to cache.
+    - `system` is a list of blocks: the first (the platform's fixed rules) is
+      cached with `cache_control`, so repeat drafts reuse it at ~10% of the input
+      price once it's long enough to cache; later blocks (the business's layers,
+      rendered for this case) follow it.
     - `effort` is sent only to models that support it (Sonnet 5, Opus 5).
     - Opus 5 gets Anthropic's server-side refusal fallback ("default"); a
       refusal that still happens is reported, never returned as a draft.
@@ -62,12 +64,15 @@ class ClaudeDraftWriter:
     def __init__(self, client: anthropic.Anthropic) -> None:
         self.client = client
 
-    def write(self, *, model: str, effort: Effort, system: str, user: str) -> DraftResult:
+    def write(self, *, model: str, effort: Effort, system: list[str], user: str) -> DraftResult:
         info = MODELS[model]
+        blocks: list[dict[str, Any]] = [{"type": "text", "text": text} for text in system if text]
+        if blocks:
+            blocks[0]["cache_control"] = {"type": "ephemeral"}
         kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": self.MAX_TOKENS,
-            "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+            "system": blocks,
             "messages": [{"role": "user", "content": user}],
             "output_format": DraftOutput,
         }

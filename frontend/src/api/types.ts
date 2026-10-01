@@ -184,6 +184,9 @@ export interface QueueSettings {
   approval_threshold: number | null;
   sla_first_response_hours: number | null;
   reopen_window_hours: number | null;
+  /** Model and effort for AI drafts on this queue. */
+  ai_model: ModelId;
+  ai_effort: EffortLevel;
 }
 
 export interface Queue {
@@ -380,43 +383,77 @@ export interface ModelOption {
   supports_effort: boolean;
 }
 
-export interface TemplateContent {
-  model: ModelId;
-  effort: EffortLevel;
-  instructions: string;
-  rules: string[];
-  example_reply: string | null;
+export type TemplateKind = "base" | "persona" | "category";
+export type Layer = "baseline" | "persona" | "category";
+
+/** Checks run on every draft. Checks from all layers apply together. */
+export interface TemplateChecks {
   max_words: number | null;
   must_include: string[];
   must_not_include: string[];
 }
 
-export interface ReplyTemplateWrite extends TemplateContent {
-  name: string;
+export interface PromptTemplateWrite extends TemplateChecks {
+  /** Jinja, without the {#--- ---#} header. */
+  source: string;
   description: string | null;
-  priority: number;
-  is_active: boolean;
-  match_criteria: MatchCriteria;
 }
 
-export interface TemplateVersion extends TemplateContent {
+export interface PromptTemplateVersion extends TemplateChecks {
   version: number;
+  source: string;
   created_at: string;
   created_by: string | null;
 }
 
-export interface ReplyTemplate {
-  id: string;
+/** base.jinja, queue/<Queue>.jinja or category/<Type>[_<Category>[_<Sub>]].jinja */
+export interface PromptTemplate {
   name: string;
+  kind: TemplateKind;
   description: string | null;
-  priority: number;
-  is_active: boolean;
-  match_criteria: MatchCriteria;
   current_version: number;
-  current: TemplateVersion;
-  versions: TemplateVersion[];
-  created_at: string;
+  current: PromptTemplateVersion;
+  versions: PromptTemplateVersion[];
+  is_default_content: boolean;
   updated_at: string;
+}
+
+/** An unsaved edit, for preview and the test lab. */
+export interface TemplateOverride extends PromptTemplateWrite {
+  name: string;
+}
+
+export interface LayerRead {
+  layer: Layer;
+  name: string;
+  version: number | null;
+  text: string;
+}
+
+export interface PromptPreview {
+  ok: boolean;
+  error: string | null;
+  system_platform: string | null;
+  layers: LayerRead[];
+  user: string | null;
+  checks: TemplateChecks | null;
+  model: ModelId | null;
+  effort: EffortLevel | null;
+}
+
+export interface TemplateVariable {
+  path: string;
+  description: string;
+  example: string | null;
+}
+
+export interface CoverageRow {
+  kind: "persona" | "category";
+  label: string;
+  template: string;
+  /** False = falls back to a broader or default template. */
+  specific: boolean;
+  expected_name: string;
 }
 
 export interface SampleCaseWrite {
@@ -445,9 +482,7 @@ export interface CheckResult {
 export interface DraftInfo {
   model: ModelId;
   served_by: string;
-  template_id: string | null;
-  template_name: string;
-  template_version: number | null;
+  templates: { layer: Layer; name: string; version: number | null }[];
   reply: string;
   facts_used: string[];
   needs_attention: boolean;
@@ -462,9 +497,9 @@ export interface DraftInfo {
 }
 
 export interface TestRunCreate {
-  template_id: string | null;
-  template: ReplyTemplateWrite;
+  template: TemplateOverride;
   models: ModelId[];
+  effort: EffortLevel;
   sample_ids: string[];
   case_numbers: number[];
   runs_per_input: number;
@@ -503,8 +538,7 @@ export interface ModelSummary {
 
 export interface TestRun {
   id: string;
-  template_id: string | null;
-  template_version: number | null;
+  template_name: string;
   status: "pending" | "running" | "done" | "failed";
   total_calls: number;
   completed_calls: number;

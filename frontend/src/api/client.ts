@@ -20,8 +20,12 @@ import type {
   Message,
   MessageCreateInput,
   ModelOption,
-  ReplyTemplate,
-  ReplyTemplateWrite,
+  CoverageRow,
+  PromptPreview,
+  PromptTemplate,
+  PromptTemplateWrite,
+  TemplateOverride,
+  TemplateVariable,
   SampleCase,
   SampleCaseWrite,
   TestRun,
@@ -174,16 +178,33 @@ export const api = {
   aiModels: () => request<ModelOption[]>("/ai/models"),
   draftReply: (tenantId: string, caseNumber: number, actorId: string) =>
     post<Message>(`/tenants/${tenantId}/cases/${caseNumber}/drafts`, { actor_id: actorId }),
-  listReplyTemplates: (tenantId: string) =>
-    request<ReplyTemplate[]>(`/tenants/${tenantId}/reply-templates`),
-  getReplyTemplate: (tenantId: string, id: string) =>
-    request<ReplyTemplate>(`/tenants/${tenantId}/reply-templates/${id}`),
-  createReplyTemplate: (tenantId: string, input: ReplyTemplateWrite, actorId: string) =>
-    post<ReplyTemplate>(`/tenants/${tenantId}/reply-templates?actor_id=${encodeURIComponent(actorId)}`, input),
-  updateReplyTemplate: (tenantId: string, id: string, input: ReplyTemplateWrite, actorId: string) =>
-    put<ReplyTemplate>(`/tenants/${tenantId}/reply-templates/${id}?actor_id=${encodeURIComponent(actorId)}`, input),
-  costProjection: (tenantId: string, id: string, monthlyVolume: number) =>
-    request<CostProjection>(`/tenants/${tenantId}/reply-templates/${id}/projection?monthly_volume=${monthlyVolume}`),
+  // Prompt templates. Names contain a slash (queue/…, category/…) and are used in the path as is.
+  listPromptTemplates: (tenantId: string) =>
+    request<PromptTemplate[]>(`/tenants/${tenantId}/prompt-templates`),
+  getPromptTemplate: (tenantId: string, name: string) =>
+    request<PromptTemplate>(`/tenants/${tenantId}/prompt-templates/${name}`),
+  savePromptTemplate: (tenantId: string, name: string, input: PromptTemplateWrite, actorId: string) =>
+    put<PromptTemplate>(`/tenants/${tenantId}/prompt-templates/${name}?actor_id=${encodeURIComponent(actorId)}`, input),
+  importPromptTemplate: (tenantId: string, name: string, content: string, actorId: string) =>
+    post<PromptTemplate>(`/tenants/${tenantId}/prompt-templates/import?actor_id=${encodeURIComponent(actorId)}`, { name, content }),
+  /** URL for downloading the template as a .jinja file (header included). */
+  promptTemplateDownloadUrl: (tenantId: string, name: string) =>
+    `/api/tenants/${tenantId}/prompt-templates/${name}/download`,
+  previewPrompt: (
+    tenantId: string,
+    input: { case_number?: number; sample_id?: string; override?: TemplateOverride | null },
+  ) => post<PromptPreview>(`/tenants/${tenantId}/prompt-templates/preview`, input),
+  templateCoverage: (tenantId: string) =>
+    request<CoverageRow[]>(`/tenants/${tenantId}/prompt-templates/coverage`),
+  templateVariables: (tenantId: string) =>
+    request<TemplateVariable[]>(`/tenants/${tenantId}/prompt-templates/variables`),
+  platformRules: async (tenantId: string) => {
+    const response = await fetch(`/api/tenants/${tenantId}/prompt-templates/platform`);
+    if (!response.ok) throw new ApiError(response.status, response.statusText);
+    return response.text();
+  },
+  costProjection: (tenantId: string, name: string, monthlyVolume: number) =>
+    request<CostProjection>(`/tenants/${tenantId}/prompt-templates/${name}/projection?monthly_volume=${monthlyVolume}`),
   listSampleCases: (tenantId: string) => request<SampleCase[]>(`/tenants/${tenantId}/sample-cases`),
   createSampleCase: (tenantId: string, input: SampleCaseWrite) =>
     post<SampleCase>(`/tenants/${tenantId}/sample-cases`, input),
@@ -194,8 +215,8 @@ export const api = {
   startTest: (tenantId: string, input: TestRunCreate) =>
     post<TestRun>(`/tenants/${tenantId}/template-tests`, input),
   getTest: (tenantId: string, id: string) => request<TestRun>(`/tenants/${tenantId}/template-tests/${id}`),
-  recentTests: (tenantId: string, templateId: string) =>
-    request<TestRun[]>(`/tenants/${tenantId}/template-tests?template_id=${templateId}`),
+  recentTests: (tenantId: string, templateName: string) =>
+    request<TestRun[]>(`/tenants/${tenantId}/template-tests?template_name=${encodeURIComponent(templateName)}`),
 };
 
 export type Api = typeof api;

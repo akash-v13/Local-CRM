@@ -1532,3 +1532,79 @@ textarea.code {
   color: var(--text);
   background: var(--surface);
 }
+
+/* ----- prompt templates ----- */
+
+.layer-stack {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  display: grid;
+  gap: 0.5rem;
+}
+.layer-stack > li {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.layer-stack > li:first-child {
+  border-left-color: var(--text-muted);
+}
+.layer-stack p {
+  margin: 0.25rem 0 0;
+}
+.layer-stack details {
+  flex-basis: 100%;
+}
+
+.code-editor {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre-wrap;
+}
+
+.variable-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.variable-list li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+}
+.variable-list .chip {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.preview-layers details {
+  margin-top: 0.5rem;
+}
+.preview-layers .code-block {
+  max-height: 22rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+details.card > summary {
+  cursor: pointer;
+}
+.grid-2.indent {
+  margin-left: 1.6rem;
+}
+details.card[open] > summary {
+  margin-bottom: 0.75rem;
+}

@@ -42,8 +42,7 @@ export function DraftPanel({ info, edited, onDiscard }: Props) {
       <div className="draft-panel-head">
         <strong>✨ AI draft</strong>
         <span className="muted small">
-          {info.template_name}
-          {info.template_version ? ` v${info.template_version}` : ""} · {modelLabel(info.served_by)} ·{" "}
+          {modelLabel(info.served_by)} ·{" "}
           {formatUsd(info.cost_usd)} · {(info.latency_ms / 1000).toFixed(1)}s
         </span>
         {edited && <span className="tag">edited</span>}
@@ -64,6 +63,16 @@ export function DraftPanel({ info, edited, onDiscard }: Props) {
         </p>
       ))}
       <CheckBadges checks={info.checks} />
+      <p className="muted small">
+        Templates:{" "}
+        {info.templates.map((t, i) => (
+          <span key={t.layer}>
+            {i > 0 && " + "}
+            <code className="code-inline">{t.name}</code>
+            {t.version !== null && ` v${t.version}`}
+          </span>
+        ))}
+      </p>
       {info.facts_used.length > 0 && (
         <p className="muted small">Based on: {info.facts_used.join("; ")}</p>
       )}

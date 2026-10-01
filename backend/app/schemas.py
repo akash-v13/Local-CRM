@@ -236,6 +236,12 @@ class QueueSettings(BaseModel):
     )
     sla_first_response_hours: int | None = Field(default=None, ge=1)
     reopen_window_hours: int | None = Field(default=72, ge=1)
+    ai_model: Literal["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"] = Field(
+        default="claude-sonnet-5", description="Model for AI drafts in this queue."
+    )
+    ai_effort: Literal["low", "medium", "high"] = Field(
+        default="low", description="Thinking effort (Sonnet/Opus only)."
+    )
 
 
 class QueueCreate(BaseModel):
@@ -619,65 +625,112 @@ class TokenTestResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# AI reply drafting: templates, samples, test lab, drafts, cost projections
+# AI reply drafting: prompt templates, samples, test lab, drafts, cost projections
 # ---------------------------------------------------------------------------
 
 ModelId = Literal["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"]
 EffortLevel = Literal["low", "medium", "high"]
+TemplateKind = Literal["base", "persona", "category"]
 
 
-class TemplateContent(BaseModel):
-    """The versioned part of a reply template: what the model is told, and the checks."""
+class TemplateChecks(BaseModel):
+    """Automated checks; combined across the layers a draft uses (strictest word limit wins)."""
 
-    model: ModelId = "claude-sonnet-5"
-    effort: EffortLevel = Field(
-        default="low", description="Thinking effort (Sonnet/Opus only; ignored for Haiku)."
-    )
-    instructions: str = Field(min_length=1, max_length=20_000)
-    rules: list[str] = Field(default_factory=list, description="Do/don't rules, one per item.")
-    example_reply: str | None = Field(default=None, max_length=10_000)
     max_words: int | None = Field(default=None, ge=10, le=2000)
     must_include: list[str] = Field(default_factory=list)
     must_not_include: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _clean(self) -> "TemplateContent":
-        self.rules = [r.strip() for r in self.rules if r.strip()]
+    def _clean(self) -> "TemplateChecks":
         self.must_include = [p.strip() for p in self.must_include if p.strip()]
         self.must_not_include = [p.strip() for p in self.must_not_include if p.strip()]
         return self
 
 
-class ReplyTemplateWrite(TemplateContent):
-    """Create or update a template. Saving content creates a new version."""
+class PromptTemplateWrite(TemplateChecks):
+    """Save a template. A change to the source or checks creates a new version."""
 
-    name: str = Field(min_length=1, max_length=200)
-    description: str | None = None
-    priority: int = Field(default=100, ge=0)
-    is_active: bool = True
-    match_criteria: MatchCriteria = Field(default_factory=MatchCriteria)
+    source: str = Field(min_length=1, max_length=50_000, description="Jinja, without a header.")
+    description: str | None = Field(default=None, max_length=500)
 
 
-class TemplateVersionRead(TemplateContent):
+class PromptTemplateVersionRead(TemplateChecks):
     model_config = ConfigDict(from_attributes=True)
 
     version: int
+    source: str
     created_at: datetime
     created_by: str | None
 
 
-class ReplyTemplateRead(BaseModel):
-    id: uuid.UUID
+class PromptTemplateRead(BaseModel):
     name: str
+    kind: TemplateKind
     description: str | None
-    priority: int
-    is_active: bool
-    match_criteria: MatchCriteria
     current_version: int
-    current: TemplateVersionRead
-    versions: list[TemplateVersionRead] = Field(description="Newest first.")
-    created_at: datetime
+    current: PromptTemplateVersionRead
+    versions: list[PromptTemplateVersionRead] = Field(description="Newest first.")
+    is_default_content: bool = Field(description="Same as the starter template of that name.")
     updated_at: datetime
+
+
+class TemplateImport(BaseModel):
+    """A .jinja file's content (optional header + body) to save under `name`."""
+
+    name: str
+    content: str = Field(min_length=1, max_length=60_000)
+
+
+class TemplateOverride(PromptTemplateWrite):
+    """An unsaved edit, for preview and the test lab."""
+
+    name: str
+
+
+class PromptPreviewRequest(BaseModel):
+    case_number: int | None = None
+    sample_id: uuid.UUID | None = None
+    override: TemplateOverride | None = None
+
+    @model_validator(mode="after")
+    def _one_input(self) -> "PromptPreviewRequest":
+        if (self.case_number is None) == (self.sample_id is None):
+            raise ValueError("Give exactly one of case_number or sample_id.")
+        return self
+
+
+class LayerRead(BaseModel):
+    layer: Literal["baseline", "persona", "category"]
+    name: str
+    version: int | None = Field(description="None = unsaved edit.")
+    text: str
+
+
+class PromptPreview(BaseModel):
+    ok: bool
+    error: str | None = None
+    system_platform: str | None = None
+    layers: list[LayerRead] = Field(default_factory=list)
+    user: str | None = None
+    checks: TemplateChecks | None = None
+    model: str | None = None
+    effort: str | None = None
+
+
+class TemplateVariable(BaseModel):
+    path: str
+    description: str
+    example: str | None = None
+
+
+class CoverageRow(BaseModel):
+    """Which templates a queue or category would use right now."""
+
+    kind: Literal["persona", "category"]
+    label: str
+    template: str
+    specific: bool = Field(description="False = falls back to a broader or default template.")
+    expected_name: str = Field(description="The most specific template name for this row.")
 
 
 class SampleCaseWrite(BaseModel):
@@ -706,14 +759,18 @@ class CheckResultRead(BaseModel):
     detail: str
 
 
+class TemplateRef(BaseModel):
+    layer: Literal["baseline", "persona", "category"]
+    name: str
+    version: int | None
+
+
 class DraftInfo(BaseModel):
     """Details of one AI draft (stored on the draft message as `ai`)."""
 
     model: str
     served_by: str
-    template_id: uuid.UUID | None
-    template_name: str
-    template_version: int | None
+    templates: list[TemplateRef]
     reply: str
     facts_used: list[str]
     needs_attention: bool
@@ -732,11 +789,12 @@ class DraftRequest(BaseModel):
 
 
 class TestRunCreate(BaseModel):
-    """Start a test: the template as edited, against inputs, on several models."""
+    """Test one template (as edited) on several models against inputs.
+    It's used in its layer for every input; the other layers resolve normally."""
 
-    template_id: uuid.UUID | None = Field(default=None, description="The template being edited.")
-    template: ReplyTemplateWrite = Field(description="The template as currently edited.")
+    template: TemplateOverride
     models: list[ModelId] = Field(min_length=1, max_length=3)
+    effort: EffortLevel = "low"
     sample_ids: list[uuid.UUID] = Field(default_factory=list)
     case_numbers: list[int] = Field(default_factory=list)
     runs_per_input: int = Field(default=2, ge=1, le=5)
@@ -788,8 +846,7 @@ class ModelSummary(BaseModel):
 
 class TestRunRead(BaseModel):
     id: uuid.UUID
-    template_id: uuid.UUID | None
-    template_version: int | None
+    template_name: str | None
     status: str
     total_calls: int
     completed_calls: int

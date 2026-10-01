@@ -114,8 +114,11 @@ describe("ReplyComposer: Draft with AI", () => {
       ai: {
         model: "claude-sonnet-5",
         served_by: "claude-sonnet-5",
-        template_name: "Late delivery",
-        template_version: 3,
+        templates: [
+          { layer: "baseline", name: "base.jinja", version: 1 },
+          { layer: "persona", name: "queue/_default.jinja", version: 1 },
+          { layer: "category", name: "category/Complaint_Delivery_LateDelivery.jinja", version: 3 },
+        ],
         reply: "Hi John, we're sorry your parcel was late.",
         facts_used: ["6 days late"],
         needs_attention: true,
@@ -136,7 +139,8 @@ describe("ReplyComposer: Draft with AI", () => {
     await user.click(screen.getByRole("button", { name: "✨ Draft with AI" }));
     expect(draftReply).toHaveBeenCalledWith("tenant-1", makeCase().case_number, "agent.alex");
     expect(await screen.findByLabelText("Message")).toHaveValue("Hi John, we're sorry your parcel was late.");
-    expect(screen.getByText(/Late delivery v3 · Claude Sonnet 5 · \$0\.0021/)).toBeInTheDocument();
+    expect(screen.getByText(/Claude Sonnet 5 · \$0\.0021/)).toBeInTheDocument();
+    expect(screen.getByText("category/Complaint_Delivery_LateDelivery.jinja")).toBeInTheDocument();
     expect(screen.getByText("Customer mentions a lawyer")).toBeInTheDocument();
     expect(screen.getByText("Fill in before sending: [ORDER_ID]")).toBeInTheDocument();
     expect(screen.getByText(/Mentions "sorry"/)).toBeInTheDocument();

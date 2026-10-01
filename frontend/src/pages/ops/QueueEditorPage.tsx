@@ -2,12 +2,13 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { api, errorMessage } from "../../api/client";
-import type { MatchCriteria, QueueInput, QueueSettings } from "../../api/types";
+import type { EffortLevel, MatchCriteria, ModelId, QueueInput, QueueSettings } from "../../api/types";
 import { ConditionBuilder } from "../../components/ConditionBuilder";
 import { Field } from "../../components/Field";
 import { RoutingPreviewPanel } from "../../components/RoutingPreviewPanel";
 import { useSession } from "../../context/SessionContext";
 import { draftProblem, fromDrafts, toDrafts, type ConditionDraft } from "../../lib/criteria";
+import { personaNames } from "../../lib/templateNames";
 import { useLoad } from "../../lib/useLoad";
 
 const DEFAULT_SETTINGS: QueueSettings = {
@@ -16,6 +17,8 @@ const DEFAULT_SETTINGS: QueueSettings = {
   approval_threshold: null,
   sla_first_response_hours: null,
   reopen_window_hours: 72,
+  ai_model: "claude-sonnet-5",
+  ai_effort: "low",
 };
 
 /** Number inputs are edited as text; "" means "not set". */
@@ -34,6 +37,7 @@ export function QueueEditorPage() {
   const navigate = useNavigate();
 
   const fields = useLoad(tenantId ? () => api.routingFields(tenantId) : null, [tenantId]);
+  const models = useLoad(() => api.aiModels(), []);
   const existing = useLoad(
     tenantId && queueId ? () => api.getQueue(tenantId, queueId) : null,
     [tenantId, queueId],
@@ -65,7 +69,7 @@ export function QueueEditorPage() {
     setIsActive(q.is_active);
     setMatch(q.match_criteria.match);
     setConditions(toDrafts(q.match_criteria));
-    setSettings(q.settings);
+    setSettings({ ...DEFAULT_SETTINGS, ...q.settings });
     setApprovalText(toText(q.settings.approval_threshold));
     setSlaText(toText(q.settings.sla_first_response_hours));
     setReopenText(toText(q.settings.reopen_window_hours));
@@ -74,7 +78,7 @@ export function QueueEditorPage() {
   if (!tenantId) return null;
   if (existing.error) return <p className="error">{existing.error}</p>;
   if (!fields.data || (!isNew && !existing.data)) return <p className="muted">Loading…</p>;
-  // "Queue" is only meaningful after routing (e.g. for reply templates), not for choosing one.
+  // "Queue" is only meaningful after routing (e.g. for prompt templates), not for choosing one.
   const routingFields = { ...fields.data, fields: fields.data.fields.filter((f) => f.key !== "queue.name") };
 
   /** The form as an API payload, or null (and problems shown) if it isn't valid yet. */
@@ -202,7 +206,7 @@ export function QueueEditorPage() {
           <div className="card form-card">
             <h2>Handling</h2>
             <p className="hint">
-              Saved now; applied as the features arrive (AI drafting, approvals, SLA timers).
+              AI drafting applies now; approvals and SLA timers are saved and applied as those features arrive.
             </p>
             <label className="checkbox">
               <input
@@ -227,6 +231,40 @@ export function QueueEditorPage() {
               />
               AI may send without human review
             </label>
+            {settings.gen_ai_allowed && (
+              <div className="grid-2 indent">
+                <Field label="AI model">
+                  {(id) => (
+                    <select id={id} value={settings.ai_model}
+                      onChange={(e) => setSettings({ ...settings, ai_model: e.target.value as ModelId })}>
+                      {models.data?.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label} (${m.input_per_mtok} / ${m.output_per_mtok} per M tokens)
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
+                <Field label="Effort">
+                  {(id) => (
+                    <select id={id} value={settings.ai_effort}
+                      disabled={models.data?.find((m) => m.id === settings.ai_model)?.supports_effort === false}
+                      onChange={(e) => setSettings({ ...settings, ai_effort: e.target.value as EffortLevel })}>
+                      <option value="low">Low: fastest, cheapest</option>
+                      <option value="medium">Medium: more care</option>
+                      <option value="high">High: most thorough</option>
+                    </select>
+                  )}
+                </Field>
+                <p className="hint span-2">
+                  Persona template:{" "}
+                  <Link to={`/ops/templates/${personaNames(name || "_")[0]}`}>
+                    <code className="code-inline">{name.trim() ? personaNames(name)[0] : "queue/<Name>.jinja"}</code>
+                  </Link>{" "}
+                  (falls back to the default persona if it doesn't exist). Compare models in a template's test lab.
+                </p>
+              </div>
+            )}
             <div className="grid-3">
               <Field label="Approval needed above (amount)">
                 {(id) => (

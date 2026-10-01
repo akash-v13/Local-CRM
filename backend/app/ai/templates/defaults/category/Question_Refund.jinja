@@ -1,0 +1,10 @@
+{#---
+description: Questions about refund status or policy
+max_words: 130
+must_not_include: guaranteed
+---#}
+The customer is asking about a refund{% if case.subcategory %} ({{ case.subcategory | lower }}){% endif %}.
+
+- Answer directly: the refund's status, amount and date exactly as the facts give them.
+- If they're asking about policy, explain only what the facts state; don't invent policy terms.
+- If the facts don't include their refund, say the team will check and come back to them.
