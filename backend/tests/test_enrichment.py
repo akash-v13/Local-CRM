@@ -55,7 +55,11 @@ def event_types(client: TestClient, tenant_id: str, case: dict[str, Any]) -> lis
 
 
 def vip_queue_for_big_orders(client: TestClient, tenant_id: str) -> None:
-    rule = {"conditions": [{"field": "enrichment.shop.orderTotal", "op": "greater_than", "value": "500"}]}
+    rule = {
+        "conditions": [
+            {"field": "enrichment.shop.orderTotal", "op": "greater_than", "value": "500"}
+        ]
+    }
     response = client.post(
         f"/tenants/{tenant_id}/queues",
         json={"name": "High value", "priority": 5, "match_criteria": rule},
@@ -101,7 +105,10 @@ def test_later_connectors_use_earlier_results(
         name="Shipping",
         run_order=2,
         url_template="https://shop.example.com/shipments/{{enrichment.shop.trackingNumber}}",
-        field_mappings=[{"path": "fault", "target": "fault"}, {"path": "tracking", "target": "tracking"}],
+        field_mappings=[
+            {"path": "fault", "target": "fault"},
+            {"path": "tracking", "target": "tracking"},
+        ],
     )
     case = new_case(client, tenant_id)
     run_worker()

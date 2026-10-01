@@ -6,7 +6,10 @@ from app.domain.jsonpath import extract
 from app.domain.templates import MissingTemplateValue, placeholders, render
 
 CTX = {
-    "case": {"attributes": {"orderNumber": "ORD/1 2?x", "count": 3}, "customer": {"email": "a@b.co"}},
+    "case": {
+        "attributes": {"orderNumber": "ORD/1 2?x", "count": 3},
+        "customer": {"email": "a@b.co"},
+    },
     "enrichment": {"shop": {"note": 'He said "hi"\nbye'}},
 }
 
@@ -25,7 +28,9 @@ def test_placeholders_listed() -> None:
 
 
 def test_url_values_are_percent_encoded() -> None:
-    url = render("https://x/orders/{{case.attributes.orderNumber}}?n={{case.attributes.count}}", CTX, "url")
+    url = render(
+        "https://x/orders/{{case.attributes.orderNumber}}?n={{case.attributes.count}}", CTX, "url"
+    )
     assert url == "https://x/orders/ORD%2F1%202%3Fx?n=3"
 
 

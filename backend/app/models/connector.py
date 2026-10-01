@@ -31,8 +31,8 @@ class Connector(IdMixin, CreatedAtMixin, Base):
       connector is skipped for cases that don't match. Empty = always run.
     - `required`: if a required connector fails, the case goes to
       EnrichmentFailed instead of being routed with partial data.
-    - `secret_ciphertext`: the API key/password, encrypted (app/security/secrets.py).
-      Never returned by the API.
+    - `credential_id`: how to authenticate (app/models/credential.py), shared
+      with other connectors for the same API. None = no authentication.
     """
 
     __tablename__ = "connectors"
@@ -54,9 +54,7 @@ class Connector(IdMixin, CreatedAtMixin, Base):
     headers: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)  # non-secret headers
     body_template: Mapped[str | None] = mapped_column(Text)  # JSON with {{placeholders}}, POST only
 
-    auth_type: Mapped[str] = mapped_column(String(16), default="none")  # none|api_key|bearer|basic
-    auth_header_name: Mapped[str | None] = mapped_column(String(100))  # for api_key
-    secret_ciphertext: Mapped[str | None] = mapped_column(Text)
+    credential_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("credentials.id"))
 
     timeout_seconds: Mapped[float] = mapped_column(Float, default=5.0)
     max_retries: Mapped[int] = mapped_column(Integer, default=1)

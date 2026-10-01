@@ -9,6 +9,7 @@ from app.models.base import Base
 from app.models.case import Case
 from app.models.case_event import CaseEvent
 from app.models.connector import Connector
+from app.models.credential import Credential
 from app.models.customer import Customer
 from app.models.job import Job
 from app.models.message import Message
@@ -20,6 +21,7 @@ __all__ = [
     "Case",
     "CaseEvent",
     "Connector",
+    "Credential",
     "Customer",
     "Job",
     "Message",

@@ -22,7 +22,17 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.domain.lifecycle import CaseStatus
-from app.models import Case, CaseEvent, Connector, Customer, Job, Message, Queue, Tenant
+from app.models import (
+    Case,
+    CaseEvent,
+    Connector,
+    Credential,
+    Customer,
+    Job,
+    Message,
+    Queue,
+    Tenant,
+)
 from app.models.base import utcnow
 
 
@@ -240,3 +250,21 @@ class JobRepository:
     def pending_for_case(self, case_id: uuid.UUID) -> Job | None:
         stmt = select(Job).where(Job.case_id == case_id, Job.status.in_(("pending", "running")))
         return self.session.scalars(stmt.limit(1)).first()
+
+
+class CredentialRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, tenant_id: uuid.UUID, credential_id: uuid.UUID) -> Credential | None:
+        stmt = select(Credential).where(
+            Credential.tenant_id == tenant_id, Credential.id == credential_id
+        )
+        return self.session.scalars(stmt).one_or_none()
+
+    def list(self, tenant_id: uuid.UUID) -> Sequence[Credential]:
+        stmt = select(Credential).where(Credential.tenant_id == tenant_id)
+        return self.session.scalars(stmt.order_by(Credential.name)).all()
+
+    def add(self, credential: Credential) -> None:
+        self.session.add(credential)

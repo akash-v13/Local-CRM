@@ -3,11 +3,12 @@
 Called by the worker for `enrich_case` jobs. Split into three phases so no
 database connection is held while waiting on external APIs:
 
-1. Read  (short session):  the case, the active connectors, their secrets.
+1. Read  (short session):  the case and the active connectors.
                            The session is then closed; the loaded objects stay
                            readable but no connection is held.
-2. Call  (no database):    run each connector in `run_order`. Later connectors
-                           can use fields fetched by earlier ones.
+2. Call  (no long session): run each connector in `run_order`. Later
+                           connectors can use fields fetched by earlier ones.
+                           (Token caching opens its own brief sessions.)
 3. Write (short session):  store results, record an event, then route the case,
                            or move it to EnrichmentFailed if a *required*
                            connector failed. Retried if someone else saved the
@@ -26,6 +27,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.config import Settings
+from app.connectors.auth import AuthProvider
 from app.connectors.context import contexts_for
 from app.connectors.runner import run_connector
 from app.domain.lifecycle import CaseStatus
@@ -33,10 +35,9 @@ from app.models import Case, CaseEvent, Connector, Job
 from app.models.base import utcnow
 from app.repositories import ConnectorRepository, JobRepository, MessageRepository
 from app.schemas import ConnectorConfig, ConnectorRunResult
-from app.security.secrets import SecretDecryptionError, decrypt_secret
 from app.security.ssrf import Resolver
 from app.services.cases import CaseService
-from app.services.connectors import run_settings
+from app.services.connectors import auth_source, run_settings
 from app.services.routing import enrichment_data
 
 WRITE_ATTEMPTS = 3
@@ -47,8 +48,6 @@ class _PreparedConnector:
     id: uuid.UUID
     name: str
     config: ConnectorConfig
-    secret: str | None
-    secret_error: str | None
 
 
 @dataclass
@@ -58,17 +57,10 @@ class _Outcome:
 
 
 def _prepare(connector: Connector) -> _PreparedConnector:
-    secret: str | None = None
-    secret_error: str | None = None
-    if connector.secret_ciphertext:
-        try:
-            secret = decrypt_secret(connector.secret_ciphertext)
-        except SecretDecryptionError as exc:
-            secret_error = str(exc)
     config = ConnectorConfig.model_validate(
         {c.key: getattr(connector, c.key) for c in Connector.__table__.columns}
     )
-    return _PreparedConnector(connector.id, connector.name, config, secret, secret_error)
+    return _PreparedConnector(connector.id, connector.name, config)
 
 
 def _backoff(attempts: int) -> timedelta:
@@ -128,16 +120,16 @@ class EnrichmentService:
         texts: list[str],
         gathered: dict[str, dict[str, Any]],
     ) -> ConnectorRunResult:
-        if connector.secret_error:
-            return ConnectorRunResult(status="failed", error=connector.secret_error)
         template_ctx, routing_ctx = contexts_for(case, texts, gathered)
+        runner_settings = run_settings(self.settings, self.resolve)
+        provider = AuthProvider(self.session_factory, self.client, runner_settings)
         full = run_connector(
             connector.config,
             template_context=template_ctx,
             routing_context=routing_ctx,
-            secret=connector.secret,
+            auth=auth_source(connector.config.credential_id, provider),
             client=self.client,
-            settings=run_settings(self.settings, self.resolve),
+            settings=runner_settings,
         )
         # Keep only what the case needs: never the full response body.
         return ConnectorRunResult.model_validate(

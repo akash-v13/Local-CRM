@@ -6,11 +6,11 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Settings, get_settings
-from app.db import get_session
-from app.schemas import ConnectorRead, ConnectorTestRequest, ConnectorTestResult, ConnectorWrite
+from app.db import SessionLocal, get_session
+from app.schemas import ConnectorConfig, ConnectorRead, ConnectorTestRequest, ConnectorTestResult
 from app.security.ssrf import Resolver, resolve_host
 from app.services.connectors import ConnectorService, to_read
 
@@ -32,6 +32,11 @@ def get_resolver() -> Resolver:
     return resolve_host
 
 
+def get_session_factory() -> sessionmaker[Session]:
+    """For work that opens its own short sessions (token caching). Tests replace it."""
+    return SessionLocal
+
+
 Service = Annotated[ConnectorService, Depends(get_connector_service)]
 
 
@@ -42,7 +47,9 @@ def list_connectors(tenant_id: uuid.UUID, service: Service) -> list[ConnectorRea
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def create_connector(tenant_id: uuid.UUID, body: ConnectorWrite, service: Service) -> ConnectorRead:
+def create_connector(
+    tenant_id: uuid.UUID, body: ConnectorConfig, service: Service
+) -> ConnectorRead:
     return to_read(service.create(tenant_id, body))
 
 
@@ -53,10 +60,9 @@ def get_connector(tenant_id: uuid.UUID, connector_id: uuid.UUID, service: Servic
 
 @router.put("/{connector_id}")
 def replace_connector(
-    tenant_id: uuid.UUID, connector_id: uuid.UUID, body: ConnectorWrite, service: Service
+    tenant_id: uuid.UUID, connector_id: uuid.UUID, body: ConnectorConfig, service: Service
 ) -> ConnectorRead:
-    """Replace the whole connector. Omit `secret` to keep the stored one.
-    Deactivate (`is_active: false`) rather than delete."""
+    """Replace the whole connector. Deactivate (`is_active: false`) rather than delete."""
     return to_read(service.replace(tenant_id, connector_id, body))
 
 
@@ -68,7 +74,16 @@ def test_connector(
     client: Annotated[httpx.Client, Depends(get_http_client)],
     settings: Annotated[Settings, Depends(get_settings)],
     resolve: Annotated[Resolver, Depends(get_resolver)],
+    session_factory: Annotated[sessionmaker[Session], Depends(get_session_factory)],
 ) -> ConnectorTestResult:
     """Call the API for a real case with the connector as edited (saved or not).
-    Returns the full response so fields can be picked. Saves nothing."""
-    return service.test(tenant_id, body, client=client, settings=settings, resolve=resolve)
+    Returns the full response so fields can be picked. Saves nothing (apart
+    from caching a generated token)."""
+    return service.test(
+        tenant_id,
+        body,
+        session_factory=session_factory,
+        client=client,
+        settings=settings,
+        resolve=resolve,
+    )

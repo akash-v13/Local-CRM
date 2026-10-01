@@ -357,7 +357,6 @@ class QueueReport(BaseModel):
 # Connectors (enrichment)
 # ---------------------------------------------------------------------------
 
-AuthType = Literal["none", "api_key", "bearer", "basic"]
 HEADER_NAME = r"^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,100}$"  # RFC 7230 token characters
 
 
@@ -390,8 +389,9 @@ class ConnectorConfig(BaseModel):
     url_template: str = Field(min_length=8, max_length=2000)
     headers: dict[str, str] = Field(default_factory=dict, description="Non-secret headers.")
     body_template: str | None = Field(default=None, description="JSON body for POST.")
-    auth_type: AuthType = "none"
-    auth_header_name: str | None = Field(default=None, pattern=HEADER_NAME)
+    credential_id: uuid.UUID | None = Field(
+        default=None, description="Saved credential used to authenticate. None = no auth."
+    )
     timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     max_retries: int = Field(default=1, ge=0, le=3)
     run_when: MatchCriteria = Field(
@@ -406,8 +406,6 @@ class ConnectorConfig(BaseModel):
         for name in self.headers:
             if not re.match(HEADER_NAME, name):
                 raise ValueError(f"Invalid header name '{name}'.")
-        if self.auth_type == "api_key" and not self.auth_header_name:
-            raise ValueError("API key auth needs the header name (e.g. X-Api-Key).")
         if self.body_template and self.method != "POST":
             raise ValueError("A request body is only sent with POST.")
         templates = [self.url_template, *self.headers.values(), self.body_template or ""]
@@ -427,33 +425,18 @@ class ConnectorConfig(BaseModel):
         return self
 
 
-class ConnectorWrite(ConnectorConfig):
-    """Create or replace a connector. The secret is write-only."""
-
-    secret: str | None = Field(
-        default=None,
-        description=(
-            "API key / bearer token / 'user:password' for basic auth. Omit to keep the stored "
-            "secret unchanged. Never returned by the API."
-        ),
-    )
-    clear_secret: bool = Field(default=False, description="Remove the stored secret.")
-
-
 class ConnectorRead(ConnectorConfig):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    has_secret: bool
     created_at: datetime
     updated_at: datetime
 
 
 class ConnectorTestRequest(BaseModel):
     case_number: int
-    draft: ConnectorWrite = Field(description="The connector as currently edited (may be unsaved).")
-    connector_id: uuid.UUID | None = Field(
-        default=None, description="When editing a saved connector: reuse its stored secret."
+    draft: ConnectorConfig = Field(
+        description="The connector as currently edited (may be unsaved)."
     )
 
 
@@ -485,3 +468,147 @@ class ConnectorTestResult(ConnectorRunResult):
 
 class EnrichRequest(BaseModel):
     actor_id: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Credentials (shared authentication for connectors)
+# ---------------------------------------------------------------------------
+
+CredentialKind = Literal["api_key", "bearer", "basic", "oauth2_client_credentials", "token_request"]
+
+# Secret fields each kind needs. token_request takes any named values instead.
+REQUIRED_SECRETS: dict[str, tuple[str, ...]] = {
+    "api_key": ("key",),
+    "bearer": ("token",),
+    "basic": ("username", "password"),
+    "oauth2_client_credentials": ("client_id", "client_secret"),
+    "token_request": (),
+}
+
+
+class ApiKeyConfig(BaseModel):
+    header_name: str = Field(default="X-Api-Key", pattern=HEADER_NAME)
+
+
+class EmptyConfig(BaseModel):
+    pass
+
+
+class OAuth2Config(BaseModel):
+    """Standard OAuth 2.0 client-credentials grant (RFC 6749 §4.4)."""
+
+    token_url: str = Field(min_length=8, max_length=2000)
+    scope: str | None = None
+    audience: str | None = None
+    client_auth: Literal["body", "basic_header"] = Field(
+        default="body",
+        description="Send client id/secret in the form body, or as HTTP Basic auth.",
+    )
+
+
+class TokenRequestConfig(BaseModel):
+    """A custom "generate token" API. Use {{secret.<name>}} for stored secret values."""
+
+    method: Literal["POST", "GET"] = "POST"
+    url: str = Field(min_length=8, max_length=2000)
+    headers: dict[str, str] = Field(default_factory=dict)
+    body_format: Literal["json", "form"] = "json"
+    body_template: str | None = Field(
+        default=None,
+        description='JSON: {"user": "{{secret.username}}"}. Form: user={{secret.username}}&...',
+    )
+    token_path: str = Field(default="access_token", min_length=1, description="Where the token is.")
+    expires_in_path: str | None = Field(
+        default="expires_in", description="Seconds until expiry, in the response (optional)."
+    )
+    default_ttl_seconds: int = Field(
+        default=3600, ge=60, le=86_400 * 30, description="Used when the response has no expiry."
+    )
+    header_name: str = Field(default="Authorization", pattern=HEADER_NAME)
+    header_prefix: str = Field(default="Bearer ", max_length=50)
+
+    @model_validator(mode="after")
+    def _check(self) -> "TokenRequestConfig":
+        for name in self.headers:
+            if not re.match(HEADER_NAME, name):
+                raise ValueError(f"Invalid header name '{name}'.")
+        if self.body_template and self.method != "POST":
+            raise ValueError("A request body is only sent with POST.")
+        for template in [self.url, *self.headers.values(), self.body_template or ""]:
+            for path in placeholders(template):
+                if not path.startswith("secret."):
+                    raise ValueError(
+                        f"Unknown placeholder {{{{{path}}}}}: token requests can only use "
+                        "{{secret.<name>}}."
+                    )
+        if self.body_template and self.body_format == "json":
+            try:
+                json.loads(PLACEHOLDER.sub("x", self.body_template))
+            except ValueError as exc:
+                raise ValueError(
+                    "Body must be valid JSON, with {{placeholders}} inside quoted strings."
+                ) from exc
+        return self
+
+
+CONFIG_MODELS: dict[str, type[BaseModel]] = {
+    "api_key": ApiKeyConfig,
+    "bearer": EmptyConfig,
+    "basic": EmptyConfig,
+    "oauth2_client_credentials": OAuth2Config,
+    "token_request": TokenRequestConfig,
+}
+
+
+class CredentialWrite(BaseModel):
+    """Create or replace a credential.
+
+    `secrets` is write-only: omit it (null) to keep what's stored. When given,
+    it replaces all stored secret values for this credential.
+    """
+
+    name: str = Field(min_length=1, max_length=200)
+    kind: CredentialKind
+    config: dict[str, Any] = Field(default_factory=dict)
+    secrets: dict[str, str] | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> "CredentialWrite":
+        model = CONFIG_MODELS[self.kind]
+        self.config = model.model_validate(self.config).model_dump()
+        if self.secrets is not None:
+            for name in self.secrets:
+                if not re.match(r"^[A-Za-z][A-Za-z0-9_]{0,59}$", name):
+                    raise ValueError(f"Invalid secret name '{name}'.")
+            missing = [k for k in REQUIRED_SECRETS[self.kind] if not self.secrets.get(k)]
+            if missing:
+                raise ValueError(f"Missing secret value(s): {', '.join(missing)}.")
+        return self
+
+
+class TokenStatus(BaseModel):
+    cached: bool
+    expires_at: datetime | None
+    fetched_at: datetime | None
+
+
+class CredentialRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    kind: CredentialKind
+    config: dict[str, Any]
+    secret_fields: list[str] = Field(
+        description="Names of stored secret values (never the values)."
+    )
+    token: TokenStatus | None = Field(description="For token kinds: the cached token's status.")
+    last_error: str | None
+    used_by: list[str] = Field(description="Names of connectors using this credential.")
+    created_at: datetime
+    updated_at: datetime
+
+
+class TokenTestResult(BaseModel):
+    ok: bool
+    error: str | None = None
+    token_preview: str | None = Field(default=None, description="First characters only.")
+    expires_at: datetime | None = None

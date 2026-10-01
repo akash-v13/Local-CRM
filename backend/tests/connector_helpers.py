@@ -18,9 +18,6 @@ SHOP_CONNECTOR: dict[str, Any] = {
     "key": "shop",
     "name": "Shop orders",
     "url_template": "https://shop.example.com/orders/{{case.attributes.orderNumber}}",
-    "auth_type": "api_key",
-    "auth_header_name": "X-Api-Key",
-    "secret": "super-secret-key",
     "max_retries": 0,
     "field_mappings": [
         {"path": "total.amount", "target": "orderTotal", "label": "Order total"},
@@ -42,8 +39,37 @@ def shop_api(request: httpx.Request) -> httpx.Response:
     return httpx.Response(404, json={"error": "not found"})
 
 
-def create_connector(client: TestClient, tenant_id: str, **overrides: Any) -> dict[str, Any]:
-    response = client.post(f"/tenants/{tenant_id}/connectors", json={**SHOP_CONNECTOR, **overrides})
+API_KEY_CREDENTIAL: dict[str, Any] = {
+    "name": "Shop API key",
+    "kind": "api_key",
+    "config": {"header_name": "X-Api-Key"},
+    "secrets": {"key": "super-secret-key"},
+}
+
+
+def create_credential(client: TestClient, tenant_id: str, **overrides: Any) -> dict[str, Any]:
+    body = {**API_KEY_CREDENTIAL, **overrides}
+    response = client.post(f"/tenants/{tenant_id}/credentials", json=body)
     assert response.status_code == 201, response.text
-    body: dict[str, Any] = response.json()
-    return body
+    result: dict[str, Any] = response.json()
+    return result
+
+
+def shop_api_key_credential_id(client: TestClient, tenant_id: str) -> str:
+    """The shop's API-key credential, created on first use."""
+    existing = client.get(f"/tenants/{tenant_id}/credentials").json()
+    for credential in existing:
+        if credential["name"] == API_KEY_CREDENTIAL["name"]:
+            return str(credential["id"])
+    return str(create_credential(client, tenant_id)["id"])
+
+
+def create_connector(client: TestClient, tenant_id: str, **overrides: Any) -> dict[str, Any]:
+    """The shop connector (with the shop's API key unless `credential_id` is overridden)."""
+    body = {**SHOP_CONNECTOR, **overrides}
+    if "credential_id" not in body:
+        body["credential_id"] = shop_api_key_credential_id(client, tenant_id)
+    response = client.post(f"/tenants/{tenant_id}/connectors", json=body)
+    assert response.status_code == 201, response.text
+    created: dict[str, Any] = response.json()
+    return created

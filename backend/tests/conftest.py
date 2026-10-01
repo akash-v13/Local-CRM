@@ -19,7 +19,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.connectors import get_http_client, get_resolver
+from app.api.connectors import get_http_client, get_resolver, get_session_factory
 from app.db import get_session
 from app.main import app
 from app.models import Base
@@ -79,6 +79,7 @@ def client(session_factory: sessionmaker[Session], fake_apis: FakeApis) -> Itera
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_http_client] = override_http_client
     app.dependency_overrides[get_resolver] = lambda: public_resolver
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
