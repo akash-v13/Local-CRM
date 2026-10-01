@@ -1,0 +1,163 @@
+{
+  "schemaVersion": "1.0",
+  "tenantId": "tnt_acme_store",
+  "caseNumber": 1790812345678901,
+  "caseId": "8f14e45f-ceea-467f-a0e6-1b2c3d4e5f60",
+  "createdAt": "2026-09-28T14:05:12Z",
+  "updatedAt": "2026-09-29T09:41:03Z",
+
+  "status": "WaitingApproval",
+  "statusChangedAt": "2026-09-29T09:41:03Z",
+
+  "channel": "webform",
+  "language": "en",
+
+  "customer": {
+    "customerId": "cus_88213",
+    "displayName": "John Doe",
+    "email": "john.doe@example.com",
+    "tier": "Gold",
+    "identityLinks": ["cus_77102"]
+  },
+
+  "category": {
+    "customerSelected": { "type": "Complaint", "category": "Order", "subcategory": "Damaged item" },
+    "effective":        { "type": "Complaint", "category": "Delivery", "subcategory": "Late delivery" },
+    "source": "ai",
+    "confidence": 0.91,
+    "reason": "Customer describes the package arriving 6 days late; no mention of damage.",
+    "changedAt": "2026-09-28T14:05:40Z"
+  },
+
+  "attributes": {
+    "orderNumber": "ORD-55012",
+    "orderValue": 184.50,
+    "currency": "USD"
+  },
+
+  "flags": {
+    "sensitive": false,
+    "regulated": false,
+    "genAiAllowed": true,
+    "riskScore": 0.12
+  },
+
+  "assignment": {
+    "queueId": "q_delivery_issues",
+    "matchedRuleId": "rule_delivery_late_v3",
+    "matchedCriteria": ["category = Delivery", "keyword: late"],
+    "assignedAt": "2026-09-28T14:05:41Z",
+    "pinned": false,
+    "assignee": { "type": "ai", "id": "ai_reply_agent" },
+    "history": [
+      { "queueId": "q_order_damage", "by": { "type": "system" }, "reason": "matched customer-selected category", "at": "2026-09-28T14:05:13Z" },
+      { "queueId": "q_delivery_issues", "by": { "type": "ai", "id": "ai_recategorizer" }, "reason": "recategorized", "at": "2026-09-28T14:05:41Z" }
+    ]
+  },
+
+  "sla": {
+    "policyId": "sla_delivery_standard",
+    "modifiersApplied": ["tier:Gold"],
+    "clock": "business_hours",
+    "firstResponseDueAt": "2026-09-29T14:05:00Z",
+    "resolutionDueAt": "2026-09-30T14:05:00Z",
+    "pausedAt": null,
+    "reopenWindowEndsAt": null
+  },
+
+  "enrichment": {
+    "order": {
+      "status": "ok",
+      "connectorId": "con_shopify",
+      "fetchedAt": "2026-09-28T14:05:20Z",
+      "data": { "promisedDeliveryDate": "2026-09-20", "items": 2 }
+    },
+    "shipment": {
+      "status": "ok",
+      "connectorId": "con_carrier_tracking",
+      "fetchedAt": "2026-09-28T14:05:22Z",
+      "data": { "deliveredAt": "2026-09-26T16:10:00Z", "daysLate": 6, "fault": "carrier", "faultSource": "carrier_exception_code" }
+    },
+    "compensationHistory": {
+      "status": "ok",
+      "connectorId": "internal",
+      "fetchedAt": "2026-09-28T14:05:23Z",
+      "data": { "lookbackDays": 90, "count": 0, "total": 0 }
+    }
+  },
+
+  "decisions": {
+    "compensation": {
+      "matrixId": "mx_delivery",
+      "matrixVersion": 7,
+      "ruleId": "late_4_7_days",
+      "regulationApplied": null,
+      "outcomes": [
+        { "beneficiaryId": "cus_88213", "type": "store_credit", "amount": 25.00, "currency": "USD" }
+      ],
+      "disposition": "approval_required",
+      "dispositionReason": "amount above auto-send threshold for tier Gold",
+      "decidedAt": "2026-09-28T14:05:30Z"
+    },
+    "checks": [
+      "Recategorized Order/Damaged item -> Delivery/Late delivery (ai, 0.91)",
+      "Fault attributed to carrier via carrier_exception_code",
+      "No compensation in last 90 days",
+      "Matrix mx_delivery v7 rule late_4_7_days -> store_credit 25.00",
+      "Approval required: amount above auto-send threshold"
+    ]
+  },
+
+  "approval": {
+    "requestedAt": "2026-09-29T09:41:03Z",
+    "approverRole": "team_lead",
+    "decision": null,
+    "decidedBy": null,
+    "reason": null
+  },
+
+  "payouts": [
+    {
+      "payoutId": "po_3321",
+      "idempotencyKey": "case_01J8ZK3M4Q:late_4_7_days:cus_88213",
+      "connectorId": "con_store_credit",
+      "status": "pending_approval",
+      "scheduledFor": null
+    }
+  ],
+
+  "correspondence": [
+    {
+      "messageId": "msg_1",
+      "direction": "inbound",
+      "channel": "webform",
+      "author": { "type": "customer", "id": "cus_88213" },
+      "visibility": "public",
+      "sentAt": "2026-09-28T14:05:12Z",
+      "body": "My order arrived almost a week late and I needed it for an event.",
+      "attachments": []
+    },
+    {
+      "messageId": "msg_2",
+      "direction": "outbound",
+      "channel": "email",
+      "author": { "type": "ai", "id": "ai_reply_agent" },
+      "visibility": "draft",
+      "createdAt": "2026-09-29T09:41:00Z",
+      "body": "We're sorry your order arrived later than promised...",
+      "ai": { "model": "primary", "promptVersion": "delivery_late_reply_v_0.0.4", "inputTokens": 1830, "outputTokens": 212 }
+    },
+    {
+      "messageId": "msg_3",
+      "direction": "internal",
+      "channel": "note",
+      "author": { "type": "system" },
+      "visibility": "internal",
+      "createdAt": "2026-09-29T09:41:03Z",
+      "body": "Sent to team lead for approval of store credit."
+    }
+  ],
+
+  "eventsRef": "events/case_01J8ZK3M4Q",
+  "linkedCases": []
+}

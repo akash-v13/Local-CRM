@@ -1,0 +1,409 @@
+"""Case operations: intake, routing, status changes and correspondence."""
+
+import uuid
+from collections.abc import Sequence
+
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
+
+from app.domain.errors import CaseClosedError, ConflictError, NotFoundError, RoutingError
+from app.domain.ids import next_case_number
+from app.domain.lifecycle import CaseStatus, ensure_transition_allowed
+from app.domain.routing import describe_condition, route
+from app.models import Case, CaseEvent, Customer, Message, Queue
+from app.models.base import utcnow
+from app.repositories import (
+    CaseEventRepository,
+    CaseRepository,
+    CustomerRepository,
+    MessageRepository,
+    QueueRepository,
+    TenantRepository,
+)
+from app.schemas import (
+    ActorType,
+    CaseCreate,
+    MessageCreate,
+    RerouteRequest,
+    RouteRequest,
+    TransitionRequest,
+)
+from app.services.routing import case_context, to_candidate
+
+# How many times to retry if two servers pick the same case number (same microsecond).
+CASE_NUMBER_ATTEMPTS = 5
+
+
+class CaseService:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        self.tenants = TenantRepository(session)
+        self.customers = CustomerRepository(session)
+        self.cases = CaseRepository(session)
+        self.queues = QueueRepository(session)
+        self.messages = MessageRepository(session)
+        self.events = CaseEventRepository(session)
+
+    # ----- intake -------------------------------------------------------------------------
+
+    def create_case(self, tenant_id: uuid.UUID, data: CaseCreate) -> Case:
+        """Intake: create the case, its first message, then route it to a queue.
+
+        All in one transaction. The customer is matched by email within the
+        tenant, or created. If a queue matches, the case moves Intake → Queued;
+        if none does, it stays in Intake with a `case.unrouted` event.
+
+        (Later, enrichment will run between intake and routing, so routing
+        rules can use enriched data such as order value or delay length.)
+        """
+        if self.tenants.get(tenant_id) is None:
+            raise NotFoundError(f"Tenant {tenant_id} not found.")
+
+        customer = self.customers.find_by_email(tenant_id, data.customer.email)
+        if customer is None:
+            customer = Customer(
+                tenant_id=tenant_id,
+                email=data.customer.email,
+                display_name=data.customer.display_name,
+                tier=data.customer.tier,
+            )
+            self.customers.add(customer)
+            self.session.flush()  # assigns customer.id so the case can reference it
+
+        selected = data.category.model_dump() if data.category else None
+        case = Case(
+            tenant_id=tenant_id,
+            customer=customer,
+            status=CaseStatus.INTAKE.value,
+            channel=data.channel,
+            language=data.language,
+            # Both are kept (Idea 8): `effective` may later be corrected by AI or an agent.
+            category={"customerSelected": selected, "effective": selected, "source": "customer"},
+            attributes=data.attributes,
+        )
+        self._insert_with_case_number(case)
+
+        self.messages.add(
+            Message(
+                tenant_id=tenant_id,
+                case_id=case.id,
+                direction="inbound",
+                channel=data.channel,
+                author_type="customer",
+                author_id=str(customer.id),
+                visibility="public",
+                body=data.message,
+            )
+        )
+        self.events.add(
+            CaseEvent(
+                tenant_id=tenant_id,
+                case_id=case.id,
+                event_type="case.created",
+                to_status=CaseStatus.INTAKE.value,
+                actor_type="system",
+            )
+        )
+        self._route(case, [data.message], "system", None)
+        self.session.commit()
+        return case
+
+    def _insert_with_case_number(self, case: Case) -> None:
+        """Insert the case with a fresh case number, retrying on a cross-server collision.
+
+        Each attempt runs in a SAVEPOINT, so a duplicate-number failure only
+        undoes this insert, not the customer created earlier in the transaction.
+        """
+        for attempt in range(1, CASE_NUMBER_ATTEMPTS + 1):
+            case.case_number = next_case_number()
+            try:
+                with self.session.begin_nested():
+                    self.cases.add(case)
+                    self.session.flush()  # also assigns case.id
+                return
+            except IntegrityError as exc:
+                if "case_number" not in str(exc.orig) or attempt == CASE_NUMBER_ATTEMPTS:
+                    raise
+
+    # ----- reads --------------------------------------------------------------------------
+
+    def get_case(self, tenant_id: uuid.UUID, case_number: int) -> Case:
+        case = self.cases.get_by_number(tenant_id, case_number)
+        if case is None:
+            raise NotFoundError(f"Case {case_number} not found.")
+        return case
+
+    def list_cases(
+        self,
+        tenant_id: uuid.UUID,
+        status: CaseStatus | None,
+        queue_id: uuid.UUID | None,
+        unrouted: bool,
+        limit: int,
+        offset: int,
+    ) -> Sequence[Case]:
+        return self.cases.list(
+            tenant_id,
+            status=status,
+            queue_id=queue_id,
+            unrouted=unrouted,
+            limit=limit,
+            offset=offset,
+        )
+
+    def list_messages(self, tenant_id: uuid.UUID, case_number: int) -> Sequence[Message]:
+        case = self.get_case(tenant_id, case_number)
+        return self.messages.list_for_case(tenant_id, case.id)
+
+    def list_events(self, tenant_id: uuid.UUID, case_number: int) -> Sequence[CaseEvent]:
+        case = self.get_case(tenant_id, case_number)  # 404 if the case isn't this tenant's
+        return self.events.list_for_case(tenant_id, case.id)
+
+    # ----- routing ------------------------------------------------------------------------
+
+    def route_case(self, tenant_id: uuid.UUID, case_number: int, req: RouteRequest) -> Case:
+        """Run queue matching again, e.g. after queues were added or changed.
+
+        Only for cases still waiting for a handler (Intake or Queued), and not
+        for cases an agent pinned to a queue with a manual reroute.
+        """
+        case = self.get_case(tenant_id, case_number)
+        status = CaseStatus(case.status)
+        if status not in (CaseStatus.INTAKE, CaseStatus.QUEUED):
+            raise RoutingError(
+                f"Only Intake or Queued cases can be routed automatically; this case is {status}."
+            )
+        if case.assignment_pinned:
+            raise RoutingError(
+                "An agent pinned this case to its queue. Use reroute to move it manually."
+            )
+        texts = self.messages.customer_texts(tenant_id, case.id)
+        self._route(case, texts, req.actor_type, req.actor_id)
+        case.updated_at = utcnow()
+        self._commit(case)
+        return case
+
+    def reroute(self, tenant_id: uuid.UUID, case_number: int, req: RerouteRequest) -> Case:
+        """Manually move a case to a specific queue (Idea 8).
+
+        The case goes back to Queued (if the lifecycle allows it) and is
+        **pinned**: automatic routing won't move it again.
+        """
+        case = self.get_case(tenant_id, case_number)
+        queue = self.queues.get(tenant_id, req.queue_id)
+        if queue is None:
+            raise NotFoundError(f"Queue {req.queue_id} not found.")
+        if not queue.is_active:
+            raise RoutingError(f"Queue '{queue.name}' is inactive.")
+
+        previous: Queue | None = case.queue
+        reason = req.reason or f"Rerouted to {queue.name}"
+        if CaseStatus(case.status) is not CaseStatus.QUEUED:
+            self._apply_transition(case, CaseStatus.QUEUED, "human", req.actor_id, reason)
+
+        case.queue = queue
+        case.assignment_pinned = True
+        self.events.add(
+            CaseEvent(
+                tenant_id=tenant_id,
+                case_id=case.id,
+                event_type="case.rerouted",
+                actor_type="human",
+                actor_id=req.actor_id,
+                reason=req.reason,
+                data={
+                    "fromQueueId": str(previous.id) if previous else None,
+                    "fromQueueName": previous.name if previous else None,
+                    "toQueueId": str(queue.id),
+                    "toQueueName": queue.name,
+                },
+            )
+        )
+        case.updated_at = utcnow()
+        self._commit(case)
+        return case
+
+    def _route(
+        self, case: Case, customer_texts: list[str], actor_type: ActorType, actor_id: str | None
+    ) -> None:
+        """Match the case against active queues and assign the winner. Does NOT commit.
+
+        Records *why* in the event (which conditions matched), so agents and
+        managers can see the reasoning in the case history.
+        """
+        queues = {q.id: q for q in self.queues.list(case.tenant_id, active_only=True)}
+        result = route(
+            [to_candidate(q) for q in queues.values()], case_context(case, customer_texts)
+        )
+
+        if result.winner is None or result.winner.id is None:
+            self.events.add(
+                CaseEvent(
+                    tenant_id=case.tenant_id,
+                    case_id=case.id,
+                    event_type="case.unrouted",
+                    actor_type=actor_type,
+                    actor_id=actor_id,
+                    reason="No active queue matched this case.",
+                    data={"queuesChecked": len(queues)},
+                )
+            )
+            return
+
+        winner = queues[result.winner.id]
+        evaluation = next(e for e in result.evaluations if e.queue is result.winner)
+        previous_id = case.queue_id
+        case.queue = winner
+        self.events.add(
+            CaseEvent(
+                tenant_id=case.tenant_id,
+                case_id=case.id,
+                event_type="case.routed",
+                actor_type=actor_type,
+                actor_id=actor_id,
+                data={
+                    "queueId": str(winner.id),
+                    "queueName": winner.name,
+                    "priority": winner.priority,
+                    "previousQueueId": str(previous_id) if previous_id else None,
+                    "matchedConditions": [describe_condition(c) for c in evaluation.conditions],
+                },
+            )
+        )
+        if CaseStatus(case.status) is CaseStatus.INTAKE:
+            self._apply_transition(
+                case, CaseStatus.QUEUED, actor_type, actor_id, f"Routed to {winner.name}"
+            )
+
+    # ----- status and correspondence ------------------------------------------------------
+
+    def transition(self, tenant_id: uuid.UUID, case_number: int, req: TransitionRequest) -> Case:
+        """Move a case to a new status, validated against the lifecycle, with an event."""
+        case = self.get_case(tenant_id, case_number)
+
+        if req.expected_version is not None and req.expected_version != case.version:
+            raise ConflictError(
+                f"Case {case_number} is at version {case.version}, "
+                f"but the request expected {req.expected_version}. Reload and retry."
+            )
+
+        self._apply_transition(case, req.to_status, req.actor_type, req.actor_id, req.reason)
+        self._commit(case)
+        return case
+
+    def add_message(self, tenant_id: uuid.UUID, case_number: int, req: MessageCreate) -> Message:
+        """Add correspondence to a case.
+
+        - `agent_reply`: outbound, visible to the customer. Not actually emailed yet;
+          the event is marked `delivery: simulated`. Optionally moves the case to
+          `then_status` in the same transaction (e.g. reply + solve).
+        - `internal_note`: only visible to agents. Allowed on any case, even closed.
+        - `customer_reply`: inbound. If the case was `Solved` or `WaitingOnCustomer`,
+          it goes back to `Queued` (same queue) so someone looks at it again (Idea 7).
+
+        Replies of either kind are rejected on a `Closed` case.
+        """
+        case = self.get_case(tenant_id, case_number)
+        status = CaseStatus(case.status)
+
+        if req.kind != "internal_note" and status is CaseStatus.CLOSED:
+            raise CaseClosedError(
+                f"Case {case_number} is closed. Replies are not accepted; open a new case instead."
+            )
+
+        if req.kind == "agent_reply":
+            message = Message(
+                direction="outbound", author_type="human", visibility="public", channel="email"
+            )
+            event_type, event_data = "message.sent", {"delivery": "simulated"}
+        elif req.kind == "internal_note":
+            message = Message(
+                direction="internal", author_type="human", visibility="internal", channel="note"
+            )
+            event_type, event_data = "note.added", {}
+        else:
+            message = Message(
+                direction="inbound", author_type="customer", visibility="public", channel="email"
+            )
+            event_type, event_data = "message.received", {}
+
+        message.tenant_id = tenant_id
+        message.case_id = case.id
+        message.author_id = str(case.customer_id) if req.kind == "customer_reply" else req.author_id
+        message.body = req.body
+        self.messages.add(message)
+        self.session.flush()  # assigns message.id
+
+        actor: ActorType = "customer" if req.kind == "customer_reply" else "human"
+        self.events.add(
+            CaseEvent(
+                tenant_id=tenant_id,
+                case_id=case.id,
+                event_type=event_type,
+                actor_type=actor,
+                actor_id=message.author_id,
+                data={**event_data, "messageId": str(message.id)},
+            )
+        )
+
+        if req.kind == "customer_reply" and status in (
+            CaseStatus.SOLVED,
+            CaseStatus.WAITING_ON_CUSTOMER,
+        ):
+            self._apply_transition(case, CaseStatus.QUEUED, "customer", None, "Customer replied")
+        elif req.kind == "agent_reply" and req.then_status is not None:
+            self._apply_transition(case, req.then_status, "human", req.author_id, None)
+
+        case.updated_at = utcnow()  # marks the case changed, so its version is bumped
+        self._commit(case)
+        return message
+
+    def _apply_transition(
+        self,
+        case: Case,
+        to_status: CaseStatus,
+        actor_type: ActorType,
+        actor_id: str | None,
+        reason: str | None,
+    ) -> None:
+        """Validate and apply a status change plus its event. Does NOT commit.
+
+        Also keeps the assignee in step with the status: assigning to an agent
+        records who, assigning to AI records the AI, and going back to a queue
+        clears the assignee.
+        """
+        current = CaseStatus(case.status)
+        ensure_transition_allowed(current, to_status)
+
+        case.status = to_status.value
+        case.status_changed_at = utcnow()
+        if to_status is CaseStatus.ASSIGNED_AGENT:
+            case.assignee_type, case.assignee_id = "human", actor_id
+        elif to_status is CaseStatus.ASSIGNED_AI:
+            case.assignee_type, case.assignee_id = "ai", "ai_reply_agent"
+        elif to_status is CaseStatus.QUEUED:
+            case.assignee_type, case.assignee_id = None, None
+
+        self.events.add(
+            CaseEvent(
+                tenant_id=case.tenant_id,
+                case_id=case.id,
+                event_type="case.status_changed",
+                from_status=current.value,
+                to_status=to_status.value,
+                actor_type=actor_type,
+                actor_id=actor_id,
+                reason=reason,
+            )
+        )
+
+    def _commit(self, case: Case) -> None:
+        """Commit, turning a lost optimistic-locking race into a ConflictError."""
+        try:
+            self.session.commit()
+        except StaleDataError as exc:  # someone else saved the case after we loaded it
+            self.session.rollback()
+            raise ConflictError(
+                f"Case {case.case_number} was changed by someone else. Retry."
+            ) from exc

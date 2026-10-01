@@ -1,0 +1,44 @@
+{
+    "caseId": "12345",
+    "customerName": "John Doe",
+    "issue": "Unable to access account",
+    "status": "Open",
+    "createdDate": "2024-06-10",
+    "lastUpdatedDate": "2024-06-11",
+    "assignedTo": "Support Agent",
+    "queue": {
+        "queueId": "Q123",
+        "queueName": "Support Queue",
+        "queueDescription": "Queue for handling support cases",
+        "queuePriority": 1,
+        "queueStatus": "Active",
+        "queueCreatedDate": "2024-06-10",
+        "matchedCriteria": ["criteria1", "criteria2"]
+
+    },
+    "correspondence": [
+        {
+            "correspondenceId": "1",
+            "correspondenceType": "Emmail-Customer",
+            "correspondenceDate": "2024-06-10",
+            "correspondenceContent": "Customer reported issue with account access."
+        },
+        {
+            "correspondenceId": "2",
+            "correspondenceType": "Email-Support",
+            "correspondenceDate": "2024-06-11",
+            "correspondenceContent": "Support agent responded to the customer's issue."
+        }
+
+    ],
+    "resolution": {
+        "resolutionId": "R123",
+        "resolutionDate": "2024-06-12",
+        "resolutionType": "Refund",
+        "resolutionAmount": 100.00
+    }
+    
+
+
+
+}

@@ -1,0 +1,60 @@
+# Local development stack. Start everything with:  docker compose up --build
+#   UI (agent console + test webform): http://localhost:5173
+#   API docs:                          http://localhost:8000/docs
+#
+# Services added later (see docs/dev/local-setup.md): worker, mocks.
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: resolve
+      POSTGRES_PASSWORD: resolve  # local only — never reuse outside your machine
+      POSTGRES_DB: resolve
+    ports:
+      - "5432:5432"  # so you can connect with a DB client or run the API outside Docker
+    volumes:
+      - db-data:/var/lib/postgresql/data  # data survives restarts; `docker compose down -v` wipes it
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U resolve -d resolve"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://resolve:resolve@db:5432/resolve
+      APP_ENV: local
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Dev mode: migrate, then run with auto-reload. Code is mounted from your
+    # machine, so saving a file restarts the server — no rebuild needed.
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+
+  ui:
+    image: node:24-slim
+    working_dir: /app
+    environment:
+      API_TARGET: http://api:8000  # vite.config.ts forwards /api/* here
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    # Installs dependencies inside the container (Linux builds of native packages),
+    # then runs the Vite dev server. Saving a file updates the browser instantly.
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    volumes:
+      - ./frontend:/app
+      # Keep the container's node_modules separate from the one on your Mac.
+      - ui-node-modules:/app/node_modules
+
+volumes:
+  db-data:
+  ui-node-modules:
