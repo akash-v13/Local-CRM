@@ -1,5 +1,7 @@
 # 5. Data Model — Collections
 
+> **Design target.** This is the long-term data model, written in document-database terms. What's built today (Postgres tables) is listed in [dev/database-guide.md](dev/database-guide.md#tables-today); payouts, compensation matrices, SLA policies and letter templates aren't built yet.
+
 Draft data model for the resolution platform. It builds on the case document in [case.v2.example.json](case.v2.example.json) and the ideas in [04-product-ideas.md](04-product-ideas.md).
 
 ## 5.1 Two kinds of data
@@ -28,7 +30,7 @@ Draft data model for the resolution platform. It builds on the case document in 
 | `slaPolicies` | Base targets (first response, resolution), clock type, modifiers (tier, sensitivity) | Strictest applicable target wins |
 | `compensationMatrices` | Decision tables: conditions → outcome + disposition (auto / approval / delay) | Versioned; draft → published → archived |
 | `regulationPacks` | EU261-style rule sets and applicability rules | Versioned; can be shared across tenants |
-| `promptTemplates` | AI prompt templates | Versioned; ties to `ai.promptVersion` on messages |
+| `promptTemplates` | AI prompt templates (layered Jinja: baseline, queue persona, case type) | Versioned; each AI draft records the template versions it used |
 | `letterTemplates` | Locked, pre-approved reply wording | No AI, or AI fills slots only |
 
 ### Operational (tenant-scoped, high volume)

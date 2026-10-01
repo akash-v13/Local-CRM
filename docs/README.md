@@ -10,8 +10,10 @@ Architecture write-up of a customer care platform I worked on as a contractor fo
 | 2 | [GenAI Reply-Drafting Service](02-genai-reply-service.md) | The stateless service that turns a case into a draft reply: deterministic decisioning, routing, the LLM call, PII protection, telemetry. |
 | 3 | [Prompt Engineering System](03-prompt-engineering-system.md) | How prompts are structured, versioned, selected and hardened against hallucination and prompt injection. |
 | 4 | [Product Ideas](04-product-ideas.md) | Running log of ideas and feedback for my own resolution platform. |
+| 5 | [Data Model](05-data-model.md) | Long-term data model: collections, relationships, versioning and indexes. Example case: [case.v2.example.json](case.v2.example.json). |
 | — | [Developer guides](dev/) | [Local setup](dev/local-setup.md), [codebase guide](dev/codebase-guide.md), [database guide](dev/database-guide.md). |
-| 5 | [Data Model](05-data-model.md) | Collections, relationships, versioning and indexes for the platform. Example case: [case.v2.example.json](case.v2.example.json). |
+
+For the product built in this repository (Local CRM), start with the [main README](../README.md).
 
 ## The system in one picture
 

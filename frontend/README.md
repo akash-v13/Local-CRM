@@ -9,9 +9,10 @@ React 19 + TypeScript, built with Vite. Two areas:
 | `/cases/:caseId` | **Case view**: conversation, reply box, customer and case details, queue (reroute), status buttons, history. |
 | `/ops` | **Operations Portal: dashboard**: open cases, where they're waiting, queue × status table. |
 | `/ops/queues` | **Operations Portal: queues** in routing order; activate/deactivate. |
-| `/ops/queues/new`, `/ops/queues/:id` | **Queue editor**: name, priority, match conditions, handling settings, live routing test. |
+| `/ops/queues/new`, `/ops/queues/:id` | **Queue editor**: name, priority, match conditions, handling settings (incl. AI model and effort), live routing test. |
 | `/ops/connectors`, `/ops/connectors/new`, `/ops/connectors/:id` | **Connectors**: API calls that enrich cases. The editor is laid out as steps: Basics → Request → Authentication → Test & pick fields → Fields to keep → When to run → Order & reliability. |
-| `/ops/templates`, `/ops/templates/new`, `/ops/templates/:id` | **Reply templates**: when to use, model, instructions, rules, checks, plus **test lab**, **cost projection** and **version history**. |
+| `/ops/templates` | **Prompt templates**: the four layers (locked platform rules → baseline → queue persona → case type), which template each queue and category uses, and **New template**. |
+| `/ops/templates/<name>` (e.g. `/ops/templates/category/Complaint_Delivery.jinja`) | **Template editor**: Jinja source with clickable variables, checks, live **preview** on a case, download/upload `.jinja`, **test lab**, **cost projection**, **version history**. |
 | `/ops/samples`, `/ops/samples/new`, `/ops/samples/:id` | **Sample cases**: test inputs for the test lab. |
 | `/ops/credentials`, `/ops/credentials/new`, `/ops/credentials/:id` | **Credentials**: API key, bearer, basic, OAuth 2.0 client credentials, custom token request. Secrets are write-only; token types have "Generate token now". |
 
@@ -54,6 +55,7 @@ src/
 │   ├── format.ts         Status labels, date/age and category formatting
 │   ├── criteria.ts       Queue rules ⇄ editor form state, plain-language summaries
 │   ├── credentials.ts    Credential types described once; the editor's form is built from it
+│   ├── templateNames.ts  Prompt template names and fallback chains (mirrors the backend)
 │   └── jsonpath.ts       Read JSON by dotted path (mirrors the backend)
 ├── components/           Reusable pieces (each file has a comment explaining it)
 │   ├── Layout            Top bar + page outlet
@@ -74,11 +76,12 @@ src/
 │   ├── KeyValueEditor    Header / named-secret rows
 │   ├── JsonTree          API response with a "Keep" button on every value
 │   ├── EnrichmentCard    Connector results on the case page + "Re-run enrichment"
-│   ├── DraftPanel        AI draft details in the reply box (template, cost, checks, warnings)
+│   ├── DraftPanel        AI draft details in the reply box (templates used, cost, checks, warnings)
 │   ├── TemplateTestLab   Run a template on models × inputs; compare quality, consistency, cost
 │   └── CostProjectionPanel  Per-reply and monthly cost per model
 ├── pages/                One file per route
-│   └── ops/              Operations Portal pages (layout, dashboard, queue list, queue editor)
+│   └── ops/              Operations Portal pages (dashboard, queues, connectors, credentials,
+│                         prompt templates, sample cases)
 └── test/                 Test setup and fixtures
 ```
 
@@ -96,12 +99,17 @@ src/
 Component tests use Vitest + Testing Library and run in a simulated browser (jsdom). They mock the `api` module, so no backend is needed:
 
 - `CategorySelect.test.tsx`: dropdowns enable in order and reset lower levels
-- `ReplyComposer.test.tsx`: correct message kind sent, "Send & mark solved" only when allowed, closed cases only accept notes, backend errors shown
+- `ReplyComposer.test.tsx`: correct message kind sent, "Send & mark solved" only when allowed, closed cases only accept notes, backend errors shown, AI draft details
 - `StatusActions.test.tsx`: one button per allowed status, sends the agent and reason
 - `ConditionBuilder.test.tsx`: builds all/any rules row by row, flags incomplete rows
 - `QueueHeatTable.test.tsx`: every count links to the right filtered case list; shading by volume
 - `TenantPicker.test.tsx`: a new tenant is selected immediately and stays selected
+- `JsonTree.test.tsx`: every value (nested and list items) can be kept, with valid unique names
+- `TemplateField.test.tsx`: inserting placeholders from the menu
+- `pages/ops/CredentialEditorPage.test.tsx`: only the fields each credential type needs; missing fields explained
 - `lib/criteria.test.ts`: rule ⇄ form round-trip, validation, summaries
+- `lib/format.test.ts`, `lib/jsonpath.test.ts`: case numbers from URLs; JSON paths read like the backend
+- `lib/templateNames.test.ts`: template names and fallbacks resolve exactly like the backend
 
 ## Charts and color
 

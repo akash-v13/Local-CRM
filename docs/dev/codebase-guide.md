@@ -1,6 +1,6 @@
 # Codebase Guide
 
-How the code is organized, why, and how to add to it. Sections 1–6 cover the backend; section 7 covers the frontend (details in [frontend/README.md](../../frontend/README.md)).
+How the code is organized, why, and how to add to it. Sections 1–6 cover the backend in general, section 7 the frontend (details in [frontend/README.md](../../frontend/README.md)), sections 8–11 each feature (routing, reporting, enrichment, AI drafting), and section 12 lists the API endpoints.
 
 ## 1. The layers
 
@@ -31,7 +31,7 @@ Each layer only talks to the one below it.
 | `repositories.py` | SQLAlchemy queries | Commit, or skip the `tenant_id` filter |
 | `models/` | Table shape | Contain business logic |
 
-**Why bother?** The worker (coming next) will run enrichment and compensation without HTTP. Because services don't know about HTTP, the worker reuses exactly the same code. And because all queries live in one file, tenant isolation is checked in one place.
+**Why bother?** The background worker runs enrichment and template test runs without HTTP. Because services don't know about HTTP, the worker reuses exactly the same code. And because all queries live in one file, tenant isolation is checked in one place.
 
 This is the same idea as the Java service that owned the database at the airline, except the data-access layer is a module here rather than a separate service.
 
@@ -88,8 +88,10 @@ Say we want **"reroute a case to another queue"** (Idea 8: manual reroute that p
 | Piece | Where it will go |
 |---|---|
 | Authentication / tenant from token | `api/` dependency replacing the `tenant_id` path parameter |
-| Compensation matrix + payouts | `domain/compensation.py`, new tables |
-| AI drafting + PII masking | `services` + an LLM client module |
+| Compensation matrix + payouts | `domain/compensation.py`, new tables; fills `decisions.compensation` for prompt templates |
+| Real email / channel connectors (send and receive) | replaces the simulated send and "Simulate customer reply" |
+| SLA timers, approvals, AI auto-send | settings already saved on queues; enforcement not built |
+| AI recategorization | Idea 8 in the product ideas log |
 
 ## 7. The frontend
 
