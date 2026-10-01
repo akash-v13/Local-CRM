@@ -20,6 +20,12 @@ function describe(event: CaseEvent): string {
       return `Routed to ${String(event.data.queueName)}`;
     case "case.unrouted":
       return "No queue matched";
+    case "enrichment.queued":
+      return "Enrichment queued";
+    case "enrichment.completed":
+      return "Enrichment finished";
+    case "enrichment.error":
+      return "Enrichment error";
     case "case.rerouted":
       return `Moved from ${String(event.data.fromQueueName ?? "no queue")} to ${String(event.data.toQueueName)}`;
     default:
@@ -40,6 +46,25 @@ function MatchedConditions({ data }: { data: Record<string, unknown> }) {
   );
 }
 
+/** Per-connector results of an enrichment run. */
+function ConnectorOutcomes({ data }: { data: Record<string, unknown> }) {
+  const rows = Array.isArray(data.connectors)
+    ? (data.connectors as { name: string; status: string; error: string | null }[])
+    : [];
+  if (rows.length === 0) return <div className="timeline-meta">No active connectors</div>;
+  const mark: Record<string, string> = { ok: "✓", failed: "✗", skipped: "↷" };
+  return (
+    <ul className="timeline-conditions">
+      {rows.map((r) => (
+        <li key={r.name}>
+          {mark[r.status] ?? "•"} {r.name}
+          {r.error ? `: ${r.error}` : ""}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** The case's audit trail (the `case_events` table), oldest first. */
 export function EventTimeline({ events }: { events: CaseEvent[] }) {
   if (events.length === 0) return <p className="muted">No events.</p>;
@@ -54,6 +79,7 @@ export function EventTimeline({ events }: { events: CaseEvent[] }) {
           </div>
           {e.reason && <div className="timeline-reason">“{e.reason}”</div>}
           {e.event_type === "case.routed" && <MatchedConditions data={e.data} />}
+          {e.event_type === "enrichment.completed" && <ConnectorOutcomes data={e.data} />}
         </li>
       ))}
     </ol>

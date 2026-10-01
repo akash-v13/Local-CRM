@@ -2,7 +2,7 @@
 
 A customer care **resolution engine**: it takes in customer cases, enriches them with data from the business's own systems, decides compensation using rules the business configures, drafts replies with AI, and routes anything risky to a human.
 
-> Status: **early.** Working: case intake (API + test webform), the case lifecycle, agent replies / internal notes, the audit trail, and the agent console UI. Next: queue matching, enrichment, compensation, AI drafting.
+> Status: **early.** Working: case intake (API + test webform), case lifecycle, agent replies and notes, audit trail, queue routing, Operations Portal (queues, dashboard), and **enrichment**: connectors with shared credentials (incl. OAuth / generated tokens), a background worker, and routing on enriched data. Next: compensation matrix, AI drafting.
 
 ## Repository layout
 

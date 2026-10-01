@@ -83,6 +83,8 @@ const FALLBACK_OPERATOR_LABELS: Record<Operator, string> = {
   not_equals: "is not",
   one_of: "is one of",
   contains_any: "contains any of",
+  greater_than: "is greater than",
+  less_than: "is less than",
 };
 
 /** One-line, human-readable summary, e.g. `Category is "Delivery" and Channel is "email"`. */

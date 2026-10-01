@@ -156,8 +156,10 @@ class EnrichmentService:
                         "connectorId": str(o.connector.id),
                         "connectorName": o.connector.name,
                         "fetchedAt": fetched_at,
+                        # JSONB doesn't keep key order; this does (connector run order).
+                        "position": position,
                     }
-                    for o in outcomes
+                    for position, o in enumerate(outcomes)
                 },
             }
             session.add(

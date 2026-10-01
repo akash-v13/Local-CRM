@@ -229,3 +229,15 @@ def test_enrichment_fields_appear_in_the_rule_builder(client: TestClient, tenant
     labels = {f["key"]: f["label"] for f in fields}
     assert labels["enrichment.shop.orderTotal"] == "Shop orders: Order total"
     assert labels["enrichment.shop.carrier"] == "Shop orders: carrier"
+
+
+def test_results_record_run_order(
+    client: TestClient, tenant_id: str, fake_apis: FakeApis, run_worker: RunWorker
+) -> None:
+    fake_apis.handler = shop_api
+    create_connector(client, tenant_id, key="zeta_first", run_order=1)
+    create_connector(client, tenant_id, key="aa", run_order=2)  # sorts first alphabetically
+    case = new_case(client, tenant_id)
+    run_worker()
+    enrichment = get(client, tenant_id, case)["enrichment"]
+    assert (enrichment["zeta_first"]["position"], enrichment["aa"]["position"]) == (0, 1)

@@ -15,6 +15,8 @@ interface Props {
   onConditionsChange: (conditions: ConditionDraft[]) => void;
   /** Show per-row problems (after the user tried to save or test). */
   showProblems: boolean;
+  /** What "no conditions" means here. Defaults to the queue wording. */
+  emptyText?: string;
 }
 
 /**
@@ -31,6 +33,7 @@ export function ConditionBuilder({
   conditions,
   onConditionsChange,
   showProblems,
+  emptyText,
 }: Props) {
   const update = (key: string, change: Partial<ConditionDraft>) =>
     onConditionsChange(conditions.map((c) => (c.key === key ? { ...c, ...change } : c)));
@@ -54,7 +57,11 @@ export function ConditionBuilder({
 
       {conditions.length === 0 && (
         <p className="muted">
-          No conditions: this queue matches <strong>every</strong> case that reaches it (a catch-all).
+          {emptyText ?? (
+            <>
+              No conditions: this queue matches <strong>every</strong> case that reaches it (a catch-all).
+            </>
+          )}
         </p>
       )}
 

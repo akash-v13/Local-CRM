@@ -55,7 +55,7 @@ Your code is mounted into the containers: saving a backend file restarts the API
 |---|---|
 | Stop | `Ctrl+C`, or `docker compose down` |
 | Stop **and delete all data** | `docker compose down -v` |
-| See API / UI logs | `docker compose logs -f api` / `docker compose logs -f ui` |
+| See API / UI / worker logs | `docker compose logs -f api` (or `ui`, `worker`, `mocks`) |
 | Open a SQL shell | `docker compose exec db psql -U resolve -d resolve` |
 | After changing backend dependencies | `docker compose up --build` |
 | After changing frontend dependencies | `docker compose restart ui` (reruns `npm ci`) |
@@ -97,6 +97,21 @@ npm run dev                                  # http://localhost:5173
 4. On a case, use **Queue → Move to queue…** to reroute manually. The case is then *pinned* there.
 5. Open a queue, change its conditions **without saving**, pick a case under **Test with a real case** and **Run test**. You'll see which queue it would land in and why each queue did or didn't match.
 6. **Operations → Dashboard** shows open cases, where they're waiting, and a queue × status table. Click any number to open exactly those cases.
+
+### Try enrichment (connectors) with the mock shop API
+
+docker-compose runs a fake shop/shipping API at `http://mocks:8100` (docs: http://localhost:8100/docs).
+
+1. **Operations → Credentials → New credential**:
+   - "Shop OAuth": type **OAuth 2.0**, token URL `http://mocks:8100/oauth/token`, client ID `demo-client`, client secret `demo-secret`. Create, then **Generate token now**.
+   - "Shipping key": type **API key**, header `X-Api-Key`, key `demo-key`.
+2. Submit a test webform case with order number `ORD-55012` (so there's a case to test with).
+3. **Operations → Connectors → New connector** "Shop orders": URL `http://mocks:8100/orders/` then **Insert field… → Order number**; authentication "Shop OAuth"; **Send test request**; click **Keep** on `total.amount`, `daysLate`, `trackingNumber`; create.
+4. Submit another webform case. It shows "Enriching…" and a moment later the **Enrichment** card fills in.
+5. A second connector "Shipping" (run order after the first): URL `http://mocks:8100/shipments/` + **Insert field… → Shop orders: trackingNumber**, credential "Shipping key", keep `fault`.
+6. A queue rule like *Shop orders: totalAmount is greater than 500* now routes on enriched data.
+
+Failure testing: order numbers containing `404`, `500` or `SLOW` make the mock API fail or time out.
 
 ## Try it with the API directly
 
