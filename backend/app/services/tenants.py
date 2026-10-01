@@ -9,6 +9,7 @@ from app.domain.errors import NotFoundError
 from app.models import Queue, Tenant
 from app.repositories import QueueRepository, TenantRepository
 from app.schemas import QueueSettings, TenantCreate
+from app.services.replies import ReplyTemplateService
 
 # Every new tenant gets a catch-all queue, so no case is ever left unrouted
 # out of the box. Managers can rename, reprioritise or deactivate it.
@@ -41,6 +42,7 @@ class TenantService:
                 settings=QueueSettings().model_dump(),
             )
         )
+        ReplyTemplateService(self.session).create_default(tenant.id)
         self.session.commit()
         return tenant
 

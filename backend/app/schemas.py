@@ -152,6 +152,10 @@ class MessageCreate(BaseModel):
         default=None,
         description="agent_reply only: move the case to this status in the same transaction.",
     )
+    from_draft_id: uuid.UUID | None = Field(
+        default=None,
+        description="agent_reply only: the AI draft this reply started from (tracks edits).",
+    )
 
 
 class TransitionRequest(BaseModel):
@@ -612,3 +616,215 @@ class TokenTestResult(BaseModel):
     error: str | None = None
     token_preview: str | None = Field(default=None, description="First characters only.")
     expires_at: datetime | None = None
+
+
+# ---------------------------------------------------------------------------
+# AI reply drafting: templates, samples, test lab, drafts, cost projections
+# ---------------------------------------------------------------------------
+
+ModelId = Literal["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"]
+EffortLevel = Literal["low", "medium", "high"]
+
+
+class TemplateContent(BaseModel):
+    """The versioned part of a reply template: what the model is told, and the checks."""
+
+    model: ModelId = "claude-sonnet-5"
+    effort: EffortLevel = Field(
+        default="low", description="Thinking effort (Sonnet/Opus only; ignored for Haiku)."
+    )
+    instructions: str = Field(min_length=1, max_length=20_000)
+    rules: list[str] = Field(default_factory=list, description="Do/don't rules, one per item.")
+    example_reply: str | None = Field(default=None, max_length=10_000)
+    max_words: int | None = Field(default=None, ge=10, le=2000)
+    must_include: list[str] = Field(default_factory=list)
+    must_not_include: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _clean(self) -> "TemplateContent":
+        self.rules = [r.strip() for r in self.rules if r.strip()]
+        self.must_include = [p.strip() for p in self.must_include if p.strip()]
+        self.must_not_include = [p.strip() for p in self.must_not_include if p.strip()]
+        return self
+
+
+class ReplyTemplateWrite(TemplateContent):
+    """Create or update a template. Saving content creates a new version."""
+
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+    priority: int = Field(default=100, ge=0)
+    is_active: bool = True
+    match_criteria: MatchCriteria = Field(default_factory=MatchCriteria)
+
+
+class TemplateVersionRead(TemplateContent):
+    model_config = ConfigDict(from_attributes=True)
+
+    version: int
+    created_at: datetime
+    created_by: str | None
+
+
+class ReplyTemplateRead(BaseModel):
+    id: uuid.UUID
+    name: str
+    description: str | None
+    priority: int
+    is_active: bool
+    match_criteria: MatchCriteria
+    current_version: int
+    current: TemplateVersionRead
+    versions: list[TemplateVersionRead] = Field(description="Newest first.")
+    created_at: datetime
+    updated_at: datetime
+
+
+class SampleCaseWrite(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    channel: Literal["webform", "email", "chat", "api"] = "webform"
+    category: CategoryIn | None = None
+    customer_name: str | None = None
+    customer_tier: str | None = None
+    queue_name: str | None = None
+    facts: dict[str, Any] = Field(
+        default_factory=dict, description='What the case data says, e.g. {"daysLate": 6}.'
+    )
+    message: str = Field(min_length=1, max_length=20_000)
+
+
+class SampleCaseRead(SampleCaseWrite):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    created_at: datetime
+
+
+class CheckResultRead(BaseModel):
+    name: str
+    passed: bool
+    detail: str
+
+
+class DraftInfo(BaseModel):
+    """Details of one AI draft (stored on the draft message as `ai`)."""
+
+    model: str
+    served_by: str
+    template_id: uuid.UUID | None
+    template_name: str
+    template_version: int | None
+    reply: str
+    facts_used: list[str]
+    needs_attention: bool
+    attention_reason: str
+    checks: list[CheckResultRead]
+    warnings: list[str]
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cost_usd: float
+    latency_ms: int
+
+
+class DraftRequest(BaseModel):
+    actor_id: str | None = None
+
+
+class TestRunCreate(BaseModel):
+    """Start a test: the template as edited, against inputs, on several models."""
+
+    template_id: uuid.UUID | None = Field(default=None, description="The template being edited.")
+    template: ReplyTemplateWrite = Field(description="The template as currently edited.")
+    models: list[ModelId] = Field(min_length=1, max_length=3)
+    sample_ids: list[uuid.UUID] = Field(default_factory=list)
+    case_numbers: list[int] = Field(default_factory=list)
+    runs_per_input: int = Field(default=2, ge=1, le=5)
+    actor_id: str | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> "TestRunCreate":
+        if not self.sample_ids and not self.case_numbers:
+            raise ValueError("Pick at least one sample or case to test with.")
+        if len(set(self.models)) != len(self.models):
+            raise ValueError("Each model only once.")
+        total = len(self.models) * (len(self.sample_ids) + len(self.case_numbers))
+        if total * self.runs_per_input > 60:
+            raise ValueError("At most 60 drafts per test run; pick fewer inputs, models or runs.")
+        return self
+
+
+class TestRunEstimate(BaseModel):
+    total_calls: int
+    estimated_cost_usd: float
+    per_model: dict[str, float]
+
+
+class TestResult(BaseModel):
+    input_ref: str
+    input_label: str
+    model: str
+    run: int
+    ok: bool
+    error: str | None = None
+    draft: DraftInfo | None = None
+
+
+class ModelSummary(BaseModel):
+    model: str
+    label: str
+    drafts: int
+    errors: int
+    checks_passed_pct: float | None = Field(description="Share of automated checks passed.")
+    consistency: float | None = Field(
+        description="Mean similarity of repeated drafts for the same input (0-1)."
+    )
+    needs_attention: int
+    avg_words: float | None
+    avg_cost_usd: float | None
+    avg_latency_ms: float | None
+    total_cost_usd: float
+
+
+class TestRunRead(BaseModel):
+    id: uuid.UUID
+    template_id: uuid.UUID | None
+    template_version: int | None
+    status: str
+    total_calls: int
+    completed_calls: int
+    estimated_cost_usd: float
+    actual_cost_usd: float
+    error: str | None
+    config: dict[str, Any]
+    results: list[TestResult]
+    summary: list[ModelSummary]
+    created_at: datetime
+    created_by: str | None
+
+
+class CostProjectionRow(BaseModel):
+    model: str
+    label: str
+    source: Literal["measured", "estimated"]
+    sample_size: int
+    avg_input_tokens: float
+    avg_output_tokens: float
+    cost_per_reply_usd: float
+    cost_per_1000_usd: float
+    monthly_cost_usd: float
+
+
+class CostProjection(BaseModel):
+    monthly_volume: int
+    rows: list[CostProjectionRow]
+    notes: list[str]
+
+
+class ModelOption(BaseModel):
+    id: str
+    label: str
+    summary: str
+    input_per_mtok: float
+    output_per_mtok: float
+    supports_effort: bool

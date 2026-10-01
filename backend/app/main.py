@@ -7,8 +7,11 @@ Interactive API docs: http://localhost:8000/docs
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api import cases, connectors, credentials, health, queues, reports, tenants
+from app.api import cases, connectors, credentials, health, queues, replies, reports, tenants
 from app.domain.errors import (
+    AIDisabledError,
+    AIDraftFailedError,
+    AIUnavailableError,
     CaseClosedError,
     ConflictError,
     DomainError,
@@ -31,6 +34,8 @@ app.include_router(queues.routing_router)
 app.include_router(reports.router)
 app.include_router(connectors.router)
 app.include_router(credentials.router)
+app.include_router(replies.router)
+app.include_router(replies.models_router)
 
 
 # Map domain errors (raised by services) to HTTP responses in one place.
@@ -40,6 +45,9 @@ ERROR_STATUS_CODES: dict[type[DomainError], int] = {
     InvalidTransitionError: 409,
     CaseClosedError: 409,
     RoutingError: 409,
+    AIDisabledError: 409,
+    AIUnavailableError: 503,
+    AIDraftFailedError: 502,
     ConflictError: 409,
 }
 

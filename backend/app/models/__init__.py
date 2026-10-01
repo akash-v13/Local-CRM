@@ -14,6 +14,12 @@ from app.models.customer import Customer
 from app.models.job import Job
 from app.models.message import Message
 from app.models.queue import Queue
+from app.models.reply_template import (
+    ReplyTemplate,
+    ReplyTemplateVersion,
+    SampleCase,
+    TemplateTestRun,
+)
 from app.models.tenant import Tenant
 
 __all__ = [
@@ -26,5 +32,9 @@ __all__ = [
     "Job",
     "Message",
     "Queue",
+    "ReplyTemplate",
+    "ReplyTemplateVersion",
+    "SampleCase",
+    "TemplateTestRun",
     "Tenant",
 ]

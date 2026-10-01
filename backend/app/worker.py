@@ -8,7 +8,8 @@ SELECT ... FOR UPDATE SKIP LOCKED). Stops cleanly on Ctrl+C / SIGTERM after
 finishing the current job.
 
 Job kinds:
-  enrich_case   run the tenant's connectors on a case, then route it
+  enrich_case     run the tenant's connectors on a case, then route it
+  template_test   draft replies for a reply-template test run (needs ANTHROPIC_API_KEY)
 """
 
 import logging
@@ -20,25 +21,33 @@ from collections.abc import Callable
 
 import httpx
 
+from app.ai.drafter import DraftWriter
+from app.ai.setup import draft_writer_from
 from app.config import get_settings
 from app.db import SessionLocal
 from app.security.ssrf import resolve_host
 from app.services.enrichment import EnrichmentService, claim_job
+from app.services.template_tests import execute_test_run
 
 log = logging.getLogger("worker")
 
 
-def build_handlers(service: EnrichmentService) -> dict[str, Callable[[uuid.UUID], None]]:
-    return {"enrich_case": service.enrich_case}
+def build_handlers(
+    service: EnrichmentService, writer: DraftWriter | None = None
+) -> dict[str, Callable[[uuid.UUID], None]]:
+    return {
+        "enrich_case": service.enrich_case,
+        "template_test": lambda job_id: execute_test_run(service.session_factory, writer, job_id),
+    }
 
 
-def run_once(service: EnrichmentService) -> bool:
+def run_once(service: EnrichmentService, writer: DraftWriter | None = None) -> bool:
     """Process one due job. Returns False if there was nothing to do."""
     claimed = claim_job(service.session_factory)
     if claimed is None:
         return False
     job_id, kind = claimed
-    handler = build_handlers(service).get(kind)
+    handler = build_handlers(service, writer).get(kind)
     try:
         if handler is None:
             raise ValueError(f"Unknown job kind '{kind}'.")
@@ -69,9 +78,10 @@ def main() -> None:
         service = EnrichmentService(
             SessionLocal, client=client, settings=settings, resolve=resolve_host
         )
-        log.info("worker started")
+        writer = draft_writer_from(settings)
+        log.info("worker started (AI drafting %s)", "on" if writer else "off: no ANTHROPIC_API_KEY")
         while not stopping:
-            if not run_once(service):
+            if not run_once(service, writer):
                 time.sleep(settings.worker_poll_seconds)
 
 
