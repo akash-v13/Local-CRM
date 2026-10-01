@@ -21,6 +21,7 @@ from app.schemas import (
     CaseDetail,
     CaseEventRead,
     CaseRead,
+    EnrichRequest,
     MessageCreate,
     MessageRead,
     RerouteRequest,
@@ -114,3 +115,11 @@ def reroute_case(
 ) -> CaseRead:
     """Manually move a case to a queue. Pins it there (automatic routing won't move it)."""
     return CaseRead.model_validate(service.reroute(tenant_id, case_number, body))
+
+
+@router.post("/{case_number}/enrich")
+def enrich_case(
+    tenant_id: uuid.UUID, case_number: int, body: EnrichRequest, service: Service
+) -> CaseRead:
+    """Queue the connectors to run again for this case (e.g. after EnrichmentFailed)."""
+    return CaseRead.model_validate(service.enrich(tenant_id, case_number, body))

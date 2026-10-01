@@ -1,7 +1,8 @@
-import { Fragment } from "react";
+import { Fragment, useEffect } from "react";
 import { Link, useParams } from "react-router";
 
 import { api } from "../api/client";
+import { EnrichmentCard } from "../components/EnrichmentCard";
 import { EventTimeline } from "../components/EventTimeline";
 import { NeedsTenant } from "../components/Layout";
 import { MessageThread } from "../components/MessageThread";
@@ -27,6 +28,18 @@ export function CaseDetailPage() {
     tenantId,
     caseNumber,
   ]);
+
+  // While the worker is enriching (case still in Intake), refresh every 2 seconds.
+  const enriching = detail.data?.status === "Intake";
+  useEffect(() => {
+    if (!enriching) return;
+    const timer = window.setInterval(() => {
+      void detail.reload();
+      void events.reload();
+    }, 2000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload functions are stable
+  }, [enriching]);
 
   if (!tenantId) return <NeedsTenant />;
   if (caseNumber === null) {
@@ -122,6 +135,11 @@ export function CaseDetailPage() {
               <dt>Version</dt>
               <dd>{c.version}</dd>
             </dl>
+          </div>
+
+          <div className="card">
+            <h2>Enrichment</h2>
+            <EnrichmentCard caseDetail={c} agentId={agentId} onChanged={refresh} />
           </div>
 
           <div className="card">

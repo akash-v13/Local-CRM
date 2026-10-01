@@ -318,7 +318,14 @@ def test_routing_fields_offer_suggestions(client: TestClient, tenant_id: str) ->
     assert "Delivery" in fields["category.category"]["suggestions"]
     assert fields["customer.tier"]["suggestions"] == ["Gold"]
     ops = {o["key"]: o["takes_list"] for o in body["operators"]}
-    assert ops == {"equals": False, "not_equals": False, "one_of": True, "contains_any": True}
+    assert ops == {
+        "equals": False,
+        "not_equals": False,
+        "one_of": True,
+        "contains_any": True,
+        "greater_than": False,
+        "less_than": False,
+    }
 
 
 # ----- report ------------------------------------------------------------------------------

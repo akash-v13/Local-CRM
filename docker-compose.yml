@@ -1,8 +1,19 @@
 # Local development stack. Start everything with:  docker compose up --build
-#   UI (agent console + test webform): http://localhost:5173
-#   API docs:                          http://localhost:8000/docs
+#   UI (agent console, Operations Portal, test webform): http://localhost:5173
+#   API docs:                                             http://localhost:8000/docs
+#   Mock shop/shipping API (for connector demos):         http://localhost:8100/docs
 #
-# Services added later (see docs/dev/local-setup.md): worker, mocks.
+# Services: db (Postgres) · api (FastAPI) · worker (background jobs: enrichment)
+#           ui (Vite dev server) · mocks (fake external APIs)
+
+# Settings shared by the api and the worker.
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+psycopg://resolve:resolve@db:5432/resolve
+  APP_ENV: local
+  # Local development only: let connectors call the mock API over plain http
+  # inside the Docker network. Production uses https and public hosts only.
+  CONNECTOR_ALLOWED_HOSTS: mocks
+  CONNECTOR_ALLOW_HTTP: "true"
 
 services:
   db:
@@ -23,9 +34,7 @@ services:
 
   api:
     build: ./backend
-    environment:
-      DATABASE_URL: postgresql+psycopg://resolve:resolve@db:5432/resolve
-      APP_ENV: local
+    environment: *backend-env
     ports:
       - "8000:8000"
     depends_on:
@@ -37,6 +46,25 @@ services:
     volumes:
       - ./backend/app:/app/app
       - ./backend/alembic:/app/alembic
+
+  worker:
+    build: ./backend
+    environment: *backend-env
+    depends_on:
+      api:
+        condition: service_started  # the api applies migrations on start
+    # Restarts automatically when backend code changes (watchfiles comes with uvicorn).
+    command: watchfiles --filter python "python -m app.worker" app
+    volumes:
+      - ./backend/app:/app/app
+
+  mocks:
+    build: ./backend
+    ports:
+      - "8100:8100"
+    command: uvicorn mocks.shop:app --host 0.0.0.0 --port 8100 --reload
+    volumes:
+      - ./backend/mocks:/app/mocks
 
   ui:
     image: node:24-slim

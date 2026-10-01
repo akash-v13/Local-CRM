@@ -81,7 +81,8 @@ export interface Case {
   attributes: Record<string, unknown>;
   flags: Record<string, unknown>;
   sla: Record<string, unknown>;
-  enrichment: Record<string, unknown>;
+  /** Per connector key: what happened the last time it ran for this case. */
+  enrichment: Record<string, EnrichmentResult>;
   decisions: Record<string, unknown>;
   queue_id: string | null;
   queue: QueueSummary | null;
@@ -156,7 +157,13 @@ export interface TransitionInput {
 // Queues and routing (Operations Portal) — backend/app/schemas.py
 // ---------------------------------------------------------------------------
 
-export type Operator = "equals" | "not_equals" | "one_of" | "contains_any";
+export type Operator =
+  | "equals"
+  | "not_equals"
+  | "one_of"
+  | "contains_any"
+  | "greater_than"
+  | "less_than";
 
 export interface Condition {
   field: string;
@@ -249,4 +256,108 @@ export interface CaseFilters {
   status?: CaseStatus;
   queueId?: string;
   unrouted?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Enrichment: connectors and credentials — backend/app/schemas.py
+// ---------------------------------------------------------------------------
+
+export interface FieldMapping {
+  /** Dotted path in the API response, e.g. "total.amount" or "items.0.sku". */
+  path: string;
+  /** Saved on the case as enrichment.<connectorKey>.<target>. */
+  target: string;
+  label: string | null;
+}
+
+export interface ConnectorConfig {
+  key: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  run_order: number;
+  required: boolean;
+  method: "GET" | "POST";
+  url_template: string;
+  headers: Record<string, string>;
+  body_template: string | null;
+  credential_id: string | null;
+  timeout_seconds: number;
+  max_retries: number;
+  run_when: MatchCriteria;
+  field_mappings: FieldMapping[];
+}
+
+export interface Connector extends ConnectorConfig {
+  id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RequestPreview {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body: string | null;
+}
+
+export type RunStatus = "ok" | "failed" | "skipped";
+
+export interface ConnectorRunResult {
+  status: RunStatus;
+  error: string | null;
+  request: RequestPreview | null;
+  http_status: number | null;
+  duration_ms: number | null;
+  data: Record<string, unknown>;
+  missing: string[];
+}
+
+export interface ConnectorTestResult extends ConnectorRunResult {
+  response_json: unknown;
+  response_text: string | null;
+}
+
+/** Stored on the case per connector (snake_case from the run + camelCase metadata). */
+export interface EnrichmentResult extends ConnectorRunResult {
+  connectorId: string;
+  connectorName: string;
+  fetchedAt: string;
+  /** Run order within the last enrichment run. */
+  position?: number;
+}
+
+export type CredentialKind =
+  | "api_key"
+  | "bearer"
+  | "basic"
+  | "oauth2_client_credentials"
+  | "token_request";
+
+export interface Credential {
+  id: string;
+  name: string;
+  kind: CredentialKind;
+  config: Record<string, unknown>;
+  secret_fields: string[];
+  token: { cached: boolean; expires_at: string | null; fetched_at: string | null } | null;
+  last_error: string | null;
+  used_by: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CredentialWrite {
+  name: string;
+  kind: CredentialKind;
+  config: Record<string, unknown>;
+  /** null = keep the stored secret values. */
+  secrets: Record<string, string> | null;
+}
+
+export interface TokenTestResult {
+  ok: boolean;
+  error: string | null;
+  token_preview: string | null;
+  expires_at: string | null;
 }

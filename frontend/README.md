@@ -10,6 +10,8 @@ React 19 + TypeScript, built with Vite. Two areas:
 | `/ops` | **Operations Portal: dashboard**: open cases, where they're waiting, queue × status table. |
 | `/ops/queues` | **Operations Portal: queues** in routing order; activate/deactivate. |
 | `/ops/queues/new`, `/ops/queues/:id` | **Queue editor**: name, priority, match conditions, handling settings, live routing test. |
+| `/ops/connectors`, `/ops/connectors/new`, `/ops/connectors/:id` | **Connectors**: API calls that enrich cases. The editor is laid out as steps: Basics → Request → Authentication → Test & pick fields → Fields to keep → When to run → Order & reliability. |
+| `/ops/credentials`, `/ops/credentials/new`, `/ops/credentials/:id` | **Credentials**: API key, bearer, basic, OAuth 2.0 client credentials, custom token request. Secrets are write-only; token types have "Generate token now". |
 
 ## Everyday commands
 
@@ -48,7 +50,9 @@ src/
 ├── lib/
 │   ├── useLoad.ts        Hook: load data with loading/error state and reload()
 │   ├── format.ts         Status labels, date/age and category formatting
-│   └── criteria.ts       Queue rules ⇄ editor form state, plain-language summaries
+│   ├── criteria.ts       Queue rules ⇄ editor form state, plain-language summaries
+│   ├── credentials.ts    Credential types described once; the editor's form is built from it
+│   └── jsonpath.ts       Read JSON by dotted path (mirrors the backend)
 ├── components/           Reusable pieces (each file has a comment explaining it)
 │   ├── Layout            Top bar + page outlet
 │   ├── TenantPicker      Dev tenant switcher / creator
@@ -63,7 +67,11 @@ src/
 │   ├── ConditionBuilder  Queue match-rule editor (field · operator · value rows)
 │   ├── RoutingPreviewPanel  "Which queue would this case land in?" test
 │   ├── StatTile          Headline number (KPI)
-│   └── QueueHeatTable    Queue × status counts, shaded by volume
+│   ├── QueueHeatTable    Queue × status counts, shaded by volume
+│   ├── TemplateField     Code-style input with an "Insert field…" placeholder menu
+│   ├── KeyValueEditor    Header / named-secret rows
+│   ├── JsonTree          API response with a "Keep" button on every value
+│   └── EnrichmentCard    Connector results on the case page + "Re-run enrichment"
 ├── pages/                One file per route
 │   └── ops/              Operations Portal pages (layout, dashboard, queue list, queue editor)
 └── test/                 Test setup and fixtures

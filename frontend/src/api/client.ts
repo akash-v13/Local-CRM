@@ -11,6 +11,11 @@ import type {
   CaseDetail,
   CaseEvent,
   CaseFilters,
+  Connector,
+  ConnectorConfig,
+  ConnectorTestResult,
+  Credential,
+  CredentialWrite,
   Message,
   MessageCreateInput,
   Queue,
@@ -20,6 +25,7 @@ import type {
   RoutingPreview,
   TaxonomyType,
   Tenant,
+  TokenTestResult,
   TransitionInput,
 } from "./types";
 
@@ -76,6 +82,8 @@ const post = <T>(path: string, body: unknown) =>
   request<T>(path, { method: "POST", body: JSON.stringify(body) });
 const patch = <T>(path: string, body: unknown) =>
   request<T>(path, { method: "PATCH", body: JSON.stringify(body) });
+const put = <T>(path: string, body: unknown) =>
+  request<T>(path, { method: "PUT", body: JSON.stringify(body) });
 
 export const api = {
   listTenants: () => request<Tenant[]>("/tenants"),
@@ -127,6 +135,31 @@ export const api = {
     input: { case_number: number; draft?: QueueInput; draft_queue_id?: string },
   ) => post<RoutingPreview>(`/tenants/${tenantId}/routing/preview`, input),
   queueReport: (tenantId: string) => request<QueueReport>(`/tenants/${tenantId}/reports/queues`),
+
+  // Enrichment
+  enrichCase: (tenantId: string, caseNumber: number, actorId: string) =>
+    post<Case>(`/tenants/${tenantId}/cases/${caseNumber}/enrich`, { actor_id: actorId }),
+  listConnectors: (tenantId: string) => request<Connector[]>(`/tenants/${tenantId}/connectors`),
+  getConnector: (tenantId: string, id: string) =>
+    request<Connector>(`/tenants/${tenantId}/connectors/${id}`),
+  createConnector: (tenantId: string, input: ConnectorConfig) =>
+    post<Connector>(`/tenants/${tenantId}/connectors`, input),
+  replaceConnector: (tenantId: string, id: string, input: ConnectorConfig) =>
+    put<Connector>(`/tenants/${tenantId}/connectors/${id}`, input),
+  testConnector: (tenantId: string, caseNumber: number, draft: ConnectorConfig) =>
+    post<ConnectorTestResult>(`/tenants/${tenantId}/connectors/test`, {
+      case_number: caseNumber,
+      draft,
+    }),
+  listCredentials: (tenantId: string) => request<Credential[]>(`/tenants/${tenantId}/credentials`),
+  getCredential: (tenantId: string, id: string) =>
+    request<Credential>(`/tenants/${tenantId}/credentials/${id}`),
+  createCredential: (tenantId: string, input: CredentialWrite) =>
+    post<Credential>(`/tenants/${tenantId}/credentials`, input),
+  replaceCredential: (tenantId: string, id: string, input: CredentialWrite) =>
+    put<Credential>(`/tenants/${tenantId}/credentials/${id}`, input),
+  testCredential: (tenantId: string, id: string) =>
+    post<TokenTestResult>(`/tenants/${tenantId}/credentials/${id}/test`, {}),
 };
 
 export type Api = typeof api;

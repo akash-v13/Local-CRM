@@ -16,13 +16,24 @@ Rules:
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.domain.lifecycle import CaseStatus
-from app.models import Case, CaseEvent, Customer, Message, Queue, Tenant
+from app.models import (
+    Case,
+    CaseEvent,
+    Connector,
+    Credential,
+    Customer,
+    Job,
+    Message,
+    Queue,
+    Tenant,
+)
+from app.models.base import utcnow
 
 
 class TenantRepository:
@@ -171,3 +182,89 @@ class CaseEventRepository:
 
     def add(self, event: CaseEvent) -> None:
         self.session.add(event)
+
+
+class ConnectorRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, tenant_id: uuid.UUID, connector_id: uuid.UUID) -> Connector | None:
+        stmt = select(Connector).where(
+            Connector.tenant_id == tenant_id, Connector.id == connector_id
+        )
+        return self.session.scalars(stmt).one_or_none()
+
+    def list(self, tenant_id: uuid.UUID, active_only: bool = False) -> Sequence[Connector]:
+        """Connectors in the order they run: run_order, then creation time."""
+        stmt = select(Connector).where(Connector.tenant_id == tenant_id)
+        if active_only:
+            stmt = stmt.where(Connector.is_active.is_(True))
+        return self.session.scalars(stmt.order_by(Connector.run_order, Connector.created_at)).all()
+
+    def has_active(self, tenant_id: uuid.UUID) -> bool:
+        stmt = select(Connector.id).where(
+            Connector.tenant_id == tenant_id, Connector.is_active.is_(True)
+        )
+        return self.session.scalars(stmt.limit(1)).first() is not None
+
+    def add(self, connector: Connector) -> None:
+        self.session.add(connector)
+
+
+# A "running" job whose worker hasn't finished within this time is assumed dead
+# (crashed or killed) and is picked up again.
+STALE_JOB_AFTER = timedelta(minutes=10)
+
+
+class JobRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, job: Job) -> None:
+        self.session.add(job)
+
+    def get(self, job_id: uuid.UUID) -> Job | None:
+        return self.session.get(Job, job_id)
+
+    def claim_next(self) -> Job | None:
+        """Lock the next due job so no other worker takes it.
+
+        `FOR UPDATE SKIP LOCKED` makes concurrent workers skip rows another
+        worker has locked instead of waiting. (SQLite, used in tests, ignores it.)
+        """
+        now = utcnow()
+        stmt = (
+            select(Job)
+            .where(
+                or_(
+                    and_(Job.status == "pending", Job.run_after <= now),
+                    and_(Job.status == "running", Job.locked_at < now - STALE_JOB_AFTER),
+                )
+            )
+            .order_by(Job.run_after)
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        return self.session.scalars(stmt).first()
+
+    def pending_for_case(self, case_id: uuid.UUID) -> Job | None:
+        stmt = select(Job).where(Job.case_id == case_id, Job.status.in_(("pending", "running")))
+        return self.session.scalars(stmt.limit(1)).first()
+
+
+class CredentialRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, tenant_id: uuid.UUID, credential_id: uuid.UUID) -> Credential | None:
+        stmt = select(Credential).where(
+            Credential.tenant_id == tenant_id, Credential.id == credential_id
+        )
+        return self.session.scalars(stmt).one_or_none()
+
+    def list(self, tenant_id: uuid.UUID) -> Sequence[Credential]:
+        stmt = select(Credential).where(Credential.tenant_id == tenant_id)
+        return self.session.scalars(stmt.order_by(Credential.name)).all()
+
+    def add(self, credential: Credential) -> None:
+        self.session.add(credential)

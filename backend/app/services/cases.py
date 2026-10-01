@@ -11,12 +11,14 @@ from app.domain.errors import CaseClosedError, ConflictError, NotFoundError, Rou
 from app.domain.ids import next_case_number
 from app.domain.lifecycle import CaseStatus, ensure_transition_allowed
 from app.domain.routing import describe_condition, route
-from app.models import Case, CaseEvent, Customer, Message, Queue
+from app.models import Case, CaseEvent, Customer, Job, Message, Queue
 from app.models.base import utcnow
 from app.repositories import (
     CaseEventRepository,
     CaseRepository,
+    ConnectorRepository,
     CustomerRepository,
+    JobRepository,
     MessageRepository,
     QueueRepository,
     TenantRepository,
@@ -24,6 +26,7 @@ from app.repositories import (
 from app.schemas import (
     ActorType,
     CaseCreate,
+    EnrichRequest,
     MessageCreate,
     RerouteRequest,
     RouteRequest,
@@ -42,20 +45,24 @@ class CaseService:
         self.customers = CustomerRepository(session)
         self.cases = CaseRepository(session)
         self.queues = QueueRepository(session)
+        self.connectors = ConnectorRepository(session)
+        self.jobs = JobRepository(session)
         self.messages = MessageRepository(session)
         self.events = CaseEventRepository(session)
 
     # ----- intake -------------------------------------------------------------------------
 
     def create_case(self, tenant_id: uuid.UUID, data: CaseCreate) -> Case:
-        """Intake: create the case, its first message, then route it to a queue.
+        """Intake: create the case and its first message, then enrich or route it.
 
         All in one transaction. The customer is matched by email within the
-        tenant, or created. If a queue matches, the case moves Intake → Queued;
-        if none does, it stays in Intake with a `case.unrouted` event.
+        tenant, or created.
 
-        (Later, enrichment will run between intake and routing, so routing
-        rules can use enriched data such as order value or delay length.)
+        - If the tenant has active connectors, an `enrich_case` job is queued and
+          the case stays in Intake; the worker enriches it and then routes it,
+          so routing rules can use enriched data (order value, days late, ...).
+        - Otherwise it's routed right away: Intake → Queued if a queue matches,
+          or it stays in Intake with a `case.unrouted` event.
         """
         if self.tenants.get(tenant_id) is None:
             raise NotFoundError(f"Tenant {tenant_id} not found.")
@@ -105,9 +112,25 @@ class CaseService:
                 actor_type="system",
             )
         )
-        self._route(case, [data.message], "system", None)
+        if self.connectors.has_active(tenant_id):
+            self._queue_enrichment(case, "system", None)
+        else:
+            self.apply_routing(case, [data.message], "system", None)
         self.session.commit()
         return case
+
+    def _queue_enrichment(self, case: Case, actor_type: ActorType, actor_id: str | None) -> None:
+        """Add an enrich_case job (committed with the caller's transaction)."""
+        self.jobs.add(Job(tenant_id=case.tenant_id, kind="enrich_case", case_id=case.id))
+        self.events.add(
+            CaseEvent(
+                tenant_id=case.tenant_id,
+                case_id=case.id,
+                event_type="enrichment.queued",
+                actor_type=actor_type,
+                actor_id=actor_id,
+            )
+        )
 
     def _insert_with_case_number(self, case: Case) -> None:
         """Insert the case with a fresh case number, retrying on a cross-server collision.
@@ -162,6 +185,27 @@ class CaseService:
 
     # ----- routing ------------------------------------------------------------------------
 
+    def enrich(self, tenant_id: uuid.UUID, case_number: int, req: EnrichRequest) -> Case:
+        """Run the connectors again for this case (e.g. after fixing a connector).
+
+        From EnrichmentFailed the case goes back to Intake and is routed once
+        enrichment succeeds. Other open cases just get their data refreshed.
+        """
+        case = self.get_case(tenant_id, case_number)
+        status = CaseStatus(case.status)
+        if status is CaseStatus.CLOSED:
+            raise RoutingError("Closed cases can't be enriched again.")
+        if self.jobs.pending_for_case(case.id) is not None:
+            raise ConflictError("Enrichment is already queued or running for this case.")
+        if status is CaseStatus.ENRICHMENT_FAILED:
+            self.apply_transition(
+                case, CaseStatus.INTAKE, "human", req.actor_id, "Retrying enrichment"
+            )
+        self._queue_enrichment(case, "human", req.actor_id)
+        case.updated_at = utcnow()
+        self.commit_case(case)
+        return case
+
     def route_case(self, tenant_id: uuid.UUID, case_number: int, req: RouteRequest) -> Case:
         """Run queue matching again, e.g. after queues were added or changed.
 
@@ -179,9 +223,9 @@ class CaseService:
                 "An agent pinned this case to its queue. Use reroute to move it manually."
             )
         texts = self.messages.customer_texts(tenant_id, case.id)
-        self._route(case, texts, req.actor_type, req.actor_id)
+        self.apply_routing(case, texts, req.actor_type, req.actor_id)
         case.updated_at = utcnow()
-        self._commit(case)
+        self.commit_case(case)
         return case
 
     def reroute(self, tenant_id: uuid.UUID, case_number: int, req: RerouteRequest) -> Case:
@@ -200,7 +244,7 @@ class CaseService:
         previous: Queue | None = case.queue
         reason = req.reason or f"Rerouted to {queue.name}"
         if CaseStatus(case.status) is not CaseStatus.QUEUED:
-            self._apply_transition(case, CaseStatus.QUEUED, "human", req.actor_id, reason)
+            self.apply_transition(case, CaseStatus.QUEUED, "human", req.actor_id, reason)
 
         case.queue = queue
         case.assignment_pinned = True
@@ -221,10 +265,10 @@ class CaseService:
             )
         )
         case.updated_at = utcnow()
-        self._commit(case)
+        self.commit_case(case)
         return case
 
-    def _route(
+    def apply_routing(
         self, case: Case, customer_texts: list[str], actor_type: ActorType, actor_id: str | None
     ) -> None:
         """Match the case against active queues and assign the winner. Does NOT commit.
@@ -272,7 +316,7 @@ class CaseService:
             )
         )
         if CaseStatus(case.status) is CaseStatus.INTAKE:
-            self._apply_transition(
+            self.apply_transition(
                 case, CaseStatus.QUEUED, actor_type, actor_id, f"Routed to {winner.name}"
             )
 
@@ -288,8 +332,8 @@ class CaseService:
                 f"but the request expected {req.expected_version}. Reload and retry."
             )
 
-        self._apply_transition(case, req.to_status, req.actor_type, req.actor_id, req.reason)
-        self._commit(case)
+        self.apply_transition(case, req.to_status, req.actor_type, req.actor_id, req.reason)
+        self.commit_case(case)
         return case
 
     def add_message(self, tenant_id: uuid.UUID, case_number: int, req: MessageCreate) -> Message:
@@ -351,15 +395,15 @@ class CaseService:
             CaseStatus.SOLVED,
             CaseStatus.WAITING_ON_CUSTOMER,
         ):
-            self._apply_transition(case, CaseStatus.QUEUED, "customer", None, "Customer replied")
+            self.apply_transition(case, CaseStatus.QUEUED, "customer", None, "Customer replied")
         elif req.kind == "agent_reply" and req.then_status is not None:
-            self._apply_transition(case, req.then_status, "human", req.author_id, None)
+            self.apply_transition(case, req.then_status, "human", req.author_id, None)
 
         case.updated_at = utcnow()  # marks the case changed, so its version is bumped
-        self._commit(case)
+        self.commit_case(case)
         return message
 
-    def _apply_transition(
+    def apply_transition(
         self,
         case: Case,
         to_status: CaseStatus,
@@ -398,7 +442,7 @@ class CaseService:
             )
         )
 
-    def _commit(self, case: Case) -> None:
+    def commit_case(self, case: Case) -> None:
         """Commit, turning a lost optimistic-locking race into a ConflictError."""
         try:
             self.session.commit()

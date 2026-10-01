@@ -88,7 +88,6 @@ Say we want **"reroute a case to another queue"** (Idea 8: manual reroute that p
 | Piece | Where it will go |
 |---|---|
 | Authentication / tenant from token | `api/` dependency replacing the `tenant_id` path parameter |
-| Enrichment connectors + flows | `worker/` process sharing `services/` |
 | Compensation matrix + payouts | `domain/compensation.py`, new tables |
 | AI drafting + PII masking | `services` + an LLM client module |
 
@@ -143,7 +142,43 @@ To add a field: add it to `FIELDS` and `build_context()` in `domain/routing.py`,
 
 `GET /tenants/{t}/reports/queues` runs one `GROUP BY queue_id, status` query (served by the `(tenant_id, status, queue_id)` index) and returns counts per queue and status, open totals, and the oldest open case per queue. Every queue gets a row even with zero cases; cases with no queue appear as "Unrouted". "Open" = every status except Solved and Closed (`OPEN_STATUSES` in `domain/lifecycle.py`).
 
-## 10. API endpoints
+## 10. Enrichment: connectors, credentials and the worker
+
+```mermaid
+sequenceDiagram
+    participant API
+    participant DB as Postgres
+    participant W as Worker
+    participant Ext as External APIs
+    API->>DB: case (Intake) + enrich_case job (one transaction)
+    W->>DB: claim job (FOR UPDATE SKIP LOCKED)
+    W->>DB: read case + active connectors, then close session
+    loop each connector, by run_order
+        W->>DB: credential token cached and fresh? (row lock while refreshing)
+        W->>Ext: token request (only if needed)
+        W->>Ext: connector request (SSRF-checked, no redirects, size-capped)
+    end
+    W->>DB: save mapped fields + event, then route (or EnrichmentFailed)
+```
+
+| Piece | Where | Notes |
+|---|---|---|
+| Job queue | `models/job.py`, `JobRepository.claim_next`, `app/worker.py` | Jobs are inserted in the same transaction as the case, so nothing is lost. Several workers can run; stuck `running` jobs are re-claimed after 10 min. Unexpected errors retry with backoff; after 3 attempts the case goes to EnrichmentFailed. |
+| Running one connector | `app/connectors/runner.py` | run_when → build request (templates) → SSRF check → auth → send (retries on timeouts/429/5xx; one token refresh on 401) → map fields. Pure: no database. |
+| Templates | `domain/templates.py` | `{{case.…}}` / `{{enrichment.<key>.<field>}}` (connectors), `{{secret.<name>}}` (token requests). Values are escaped for URL / header / JSON. A missing value skips the connector. |
+| Credentials & tokens | `models/credential.py`, `app/connectors/auth.py` | Types: api_key, bearer, basic, oauth2_client_credentials, token_request. Generated tokens are cached **encrypted** with expiry, refreshed ~60 s early (or 10% of short lifetimes) and on 401, shared by all connectors and workers. |
+| Secrets | `app/security/secrets.py` | Fernet encryption with `CONNECTOR_SECRET_KEY`. Write-only in the API. The default key is dev-only; the app refuses to start outside `local` without a real one. |
+| SSRF protection | `app/security/ssrf.py` | https only, no `user:pass@`, every resolved IP must be public. `CONNECTOR_ALLOWED_HOSTS` / `CONNECTOR_ALLOW_HTTP` exist for local mocks only. Known limit: DNS rebinding, so use an egress proxy/firewall in production. |
+| Enrichment service | `services/enrichment.py` | Three phases: read (short session) → call (no long session) → write (retried on optimistic-lock conflict). Stores only mapped fields, never full responses. |
+| Routing on enriched data | `domain/routing.py` | Fields `enrichment.<key>.<field>`; numeric operators `greater_than` / `less_than` (parses "1,250.00", "$19.99"). |
+
+**When a case is created:** if the tenant has active connectors, it stays in **Intake** and an `enrich_case` job is queued; routing happens after enrichment. With no connectors it's routed immediately, as before.
+
+**Required vs optional connectors:** a failed or skipped *required* connector moves the case to **EnrichmentFailed** (agents can "Re-run enrichment"). Optional failures are recorded and the case is routed anyway.
+
+**Re-running enrichment** on a case that's already been routed refreshes its data but doesn't move it. Use "Run routing again" for that.
+
+## 11. API endpoints
 
 Full, always-current reference: http://localhost:8000/docs.
 
@@ -166,6 +201,13 @@ Full, always-current reference: http://localhost:8000/docs.
 | GET | `/tenants/{t}/routing/fields` | Fields, suggestions and operators for the condition builder |
 | POST | `/tenants/{t}/routing/preview` | Which queue would a case land in, with optional unsaved draft |
 | GET | `/tenants/{t}/reports/queues` | Case counts per queue and status |
+| POST | `/tenants/{t}/cases/{c}/enrich` | Queue the connectors to run again for a case |
+| GET, POST | `/tenants/{t}/connectors` | List (run order) / create connectors |
+| GET, PUT | `/tenants/{t}/connectors/{id}` | Read / replace (deactivate, never delete) |
+| POST | `/tenants/{t}/connectors/test` | Run an (unsaved) connector against a real case; returns the full response for field picking |
+| GET, POST | `/tenants/{t}/credentials` | List / create credentials (secrets write-only) |
+| GET, PUT | `/tenants/{t}/credentials/{id}` | Read / replace (omit `secrets` to keep them; drops cached token) |
+| POST | `/tenants/{t}/credentials/{id}/test` | Generate a token now (token types) or check secrets |
 
 ### Message rules (`CaseService.add_message`)
 
