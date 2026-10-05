@@ -2,6 +2,7 @@ import { Fragment, useEffect } from "react";
 import { Link, useParams } from "react-router";
 
 import { api } from "../api/client";
+import { CompensationCard } from "../components/CompensationCard";
 import { EnrichmentCard } from "../components/EnrichmentCard";
 import { EventTimeline } from "../components/EventTimeline";
 import { NeedsTenant } from "../components/Layout";
@@ -145,6 +146,11 @@ export function CaseDetailPage() {
           <div className="card">
             <h2>Queue</h2>
             <QueueCard caseDetail={c} agentId={agentId} onChanged={refresh} />
+          </div>
+
+          <div className="card">
+            <h2>Compensation</h2>
+            <CompensationCard caseDetail={c} agentId={agentId} onChanged={refresh} />
           </div>
 
           <div className="card">

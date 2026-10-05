@@ -33,6 +33,7 @@ from app.schemas import (
     RouteRequest,
     TransitionRequest,
 )
+from app.services.compensation import CompensationService
 from app.services.routing import case_context, to_candidate
 
 # How many times to retry if two servers pick the same case number (same microsecond).
@@ -320,6 +321,10 @@ class CaseService:
             self.apply_transition(
                 case, CaseStatus.QUEUED, actor_type, actor_id, f"Routed to {winner.name}"
             )
+        # Decide compensation once the case is routed (rules can test the queue).
+        CompensationService(self.session).decide_for_case(
+            case, customer_texts, actor_type, actor_id, only_if_undecided=True
+        )
 
     # ----- status and correspondence ------------------------------------------------------
 

@@ -25,6 +25,7 @@ from app.domain.lifecycle import CaseStatus
 from app.models import (
     Case,
     CaseEvent,
+    CompensationRule,
     Connector,
     Credential,
     Customer,
@@ -100,6 +101,27 @@ class CaseRepository:
         stmt = stmt.order_by(Case.case_number.desc()).limit(limit).offset(offset)
         return self.session.scalars(stmt).all()
 
+    def for_customer(self, tenant_id: uuid.UUID, customer_id: uuid.UUID) -> Sequence[Case]:
+        """All of a customer's cases, oldest first (for the repeat-claimant check)."""
+        stmt = (
+            select(Case)
+            .where(Case.tenant_id == tenant_id, Case.customer_id == customer_id)
+            .order_by(Case.case_number)
+        )
+        return self.session.scalars(stmt).all()
+
+    def created_since(
+        self, tenant_id: uuid.UUID, since: datetime, limit: int = 5000
+    ) -> Sequence[Case]:
+        """Cases created since `since`, oldest first (for the compensation backtest)."""
+        stmt = (
+            select(Case)
+            .where(Case.tenant_id == tenant_id, Case.created_at >= since)
+            .order_by(Case.case_number)
+            .limit(limit)
+        )
+        return self.session.scalars(stmt).all()
+
     def counts_by_queue_and_status(self, tenant_id: uuid.UUID) -> Sequence["QueueStatusCount"]:
         """One row per (queue, status) with the case count and oldest case.
 
@@ -157,6 +179,26 @@ class MessageRepository:
             .order_by(Message.created_at)
         )
         return self.session.scalars(stmt).all()
+
+    def customer_texts_for_cases(
+        self, tenant_id: uuid.UUID, case_ids: Sequence[uuid.UUID]
+    ) -> dict[uuid.UUID, list[str]]:
+        """customer_texts for many cases in one query."""
+        texts: dict[uuid.UUID, list[str]] = {case_id: [] for case_id in case_ids}
+        if not case_ids:
+            return texts
+        stmt = (
+            select(Message)
+            .where(
+                Message.tenant_id == tenant_id,
+                Message.case_id.in_(case_ids),
+                Message.author_type == "customer",
+            )
+            .order_by(Message.created_at)
+        )
+        for m in self.session.scalars(stmt):
+            texts[m.case_id].append(m.body)
+        return texts
 
     def customer_texts(self, tenant_id: uuid.UUID, case_id: uuid.UUID) -> list[str]:
         """Bodies of the customer's own messages, oldest first (used for keyword routing)."""
@@ -268,3 +310,26 @@ class CredentialRepository:
 
     def add(self, credential: Credential) -> None:
         self.session.add(credential)
+
+
+class CompensationRuleRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, tenant_id: uuid.UUID, rule_id: uuid.UUID) -> CompensationRule | None:
+        stmt = select(CompensationRule).where(
+            CompensationRule.tenant_id == tenant_id, CompensationRule.id == rule_id
+        )
+        return self.session.scalars(stmt).one_or_none()
+
+    def list(self, tenant_id: uuid.UUID, active_only: bool = False) -> Sequence[CompensationRule]:
+        """Rules in decision order: priority, then creation time."""
+        stmt = select(CompensationRule).where(CompensationRule.tenant_id == tenant_id)
+        if active_only:
+            stmt = stmt.where(CompensationRule.is_active.is_(True))
+        return self.session.scalars(
+            stmt.order_by(CompensationRule.priority, CompensationRule.created_at)
+        ).all()
+
+    def add(self, rule: CompensationRule) -> None:
+        self.session.add(rule)

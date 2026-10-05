@@ -119,6 +119,12 @@ VARIABLE_REFERENCE = [
 # ----- inputs -----------------------------------------------------------------------------
 
 
+def approved_compensation(case: Case) -> str | None:
+    """What the AI may tell the customer: only an approved decision (never a pending one)."""
+    decision = case.decisions.get("compensation") or {}
+    return decision.get("label") if decision.get("status") == "approved" else None
+
+
 def draft_input_from_case(case: Case, messages: Sequence[Message]) -> DraftInput:
     """Only customer-visible messages go to the model (no internal notes, no earlier drafts)."""
     thread = [
@@ -144,6 +150,7 @@ def draft_input_from_case(case: Case, messages: Sequence[Message]) -> DraftInput
         enrichment=enrichment_data(case),
         enrichment_labels=labels,
         thread=thread,
+        compensation=approved_compensation(case),
     )
 
 

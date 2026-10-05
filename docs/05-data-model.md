@@ -1,6 +1,6 @@
 # 5. Data Model — Collections
 
-> **Design target.** This is the long-term data model, written in document-database terms. What's built today (Postgres tables) is listed in [dev/database-guide.md](dev/database-guide.md#tables-today); payouts, compensation matrices, SLA policies and letter templates aren't built yet.
+> **Design target.** This is the long-term data model, written in document-database terms. What's built today (Postgres tables) is listed in [dev/database-guide.md](dev/database-guide.md#tables-today); the compensation matrix is built (as `compensation_rules`, with decisions stored on the case); payouts, SLA policies and letter templates aren't built yet.
 
 Draft data model for the resolution platform. It builds on the case document in [case.v2.example.json](case.v2.example.json) and the ideas in [04-product-ideas.md](04-product-ideas.md).
 
