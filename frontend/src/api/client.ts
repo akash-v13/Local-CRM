@@ -16,7 +16,17 @@ import type {
   ConnectorTestResult,
   Credential,
   CredentialWrite,
+  CompensationDecision,
+  CompensationPreview,
+  CompensationRule,
+  CompensationRuleInput,
+  CompensationSettings,
   CostProjection,
+  ExecutionDetail,
+  ExecutionOutcome,
+  ExecutionSummary,
+  PipelineDefinition,
+  SimulationResult,
   Message,
   MessageCreateInput,
   ModelOption,
@@ -173,6 +183,42 @@ export const api = {
     put<Credential>(`/tenants/${tenantId}/credentials/${id}`, input),
   testCredential: (tenantId: string, id: string) =>
     post<TokenTestResult>(`/tenants/${tenantId}/credentials/${id}/test`, {}),
+
+  // Intake pipeline
+  pipeline: (tenantId: string) => request<PipelineDefinition>(`/tenants/${tenantId}/pipeline`),
+  pipelineExecutions: (tenantId: string, outcome?: ExecutionOutcome) =>
+    request<ExecutionSummary[]>(`/tenants/${tenantId}/pipeline/executions${outcome ? `?outcome=${outcome}` : ""}`),
+  pipelineExecution: (tenantId: string, caseNumber: number) =>
+    request<ExecutionDetail>(`/tenants/${tenantId}/pipeline/executions/${caseNumber}`),
+
+  // Compensation matrix
+  listCompensationRules: (tenantId: string) =>
+    request<CompensationRule[]>(`/tenants/${tenantId}/compensation/rules`),
+  getCompensationRule: (tenantId: string, id: string) =>
+    request<CompensationRule>(`/tenants/${tenantId}/compensation/rules/${id}`),
+  createCompensationRule: (tenantId: string, input: CompensationRuleInput) =>
+    post<CompensationRule>(`/tenants/${tenantId}/compensation/rules`, input),
+  replaceCompensationRule: (tenantId: string, id: string, input: CompensationRuleInput) =>
+    put<CompensationRule>(`/tenants/${tenantId}/compensation/rules/${id}`, input),
+  compensationSettings: (tenantId: string) =>
+    request<CompensationSettings>(`/tenants/${tenantId}/compensation/settings`),
+  saveCompensationSettings: (tenantId: string, input: CompensationSettings) =>
+    put<CompensationSettings>(`/tenants/${tenantId}/compensation/settings`, input),
+  previewCompensation: (
+    tenantId: string,
+    input: { case_number: number; draft?: CompensationRuleInput | null; draft_rule_id?: string },
+  ) => post<CompensationPreview>(`/tenants/${tenantId}/compensation/preview`, input),
+  simulateCompensation: (
+    tenantId: string,
+    input: { days: number; draft?: CompensationRuleInput | null; draft_rule_id?: string },
+  ) => post<SimulationResult>(`/tenants/${tenantId}/compensation/simulate`, input),
+  decideCompensation: (tenantId: string, caseNumber: number, actorId: string) =>
+    post<CompensationDecision>(`/tenants/${tenantId}/cases/${caseNumber}/compensation/decide`, { actor_id: actorId }),
+  reviewCompensation: (tenantId: string, caseNumber: number, approve: boolean, actorId: string, note?: string) =>
+    post<CompensationDecision>(
+      `/tenants/${tenantId}/cases/${caseNumber}/compensation/${approve ? "approve" : "reject"}`,
+      { actor_id: actorId, note: note || null },
+    ),
 
   // AI reply drafting
   aiModels: () => request<ModelOption[]>("/ai/models"),

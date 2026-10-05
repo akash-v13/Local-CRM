@@ -18,8 +18,10 @@ export function OpsLayout() {
           Dashboard
         </NavLink>
         <NavLink to="/ops/queues">Queues &amp; routing</NavLink>
+        <NavLink to="/ops/pipeline">Pipeline</NavLink>
         <NavLink to="/ops/connectors">Connectors</NavLink>
         <NavLink to="/ops/credentials">Credentials</NavLink>
+        <NavLink to="/ops/compensation">Compensation</NavLink>
         <NavLink to="/ops/templates">Prompt templates</NavLink>
         <NavLink to="/ops/samples">Sample cases</NavLink>
       </nav>

@@ -12,6 +12,10 @@ import { OpsDashboardPage } from "./pages/ops/OpsDashboardPage";
 import { OpsLayout } from "./pages/ops/OpsLayout";
 import { QueueEditorPage } from "./pages/ops/QueueEditorPage";
 import { QueueListPage } from "./pages/ops/QueueListPage";
+import { CompensationListPage } from "./pages/ops/CompensationListPage";
+import { CompensationRuleEditorPage } from "./pages/ops/CompensationRuleEditorPage";
+import { PipelineExecutionPage } from "./pages/ops/PipelineExecutionPage";
+import { PipelineExecutionsPage, PipelinePage } from "./pages/ops/PipelinePage";
 import { PromptTemplateEditorPage } from "./pages/ops/PromptTemplateEditorPage";
 import { PromptTemplateListPage } from "./pages/ops/PromptTemplateListPage";
 import { SampleCaseEditorPage } from "./pages/ops/SampleCaseEditorPage";
@@ -29,6 +33,8 @@ import { WebformPage } from "./pages/WebformPage";
  *   /ops/queues/:id   Operations Portal: edit a queue (+ routing test)
  *   /ops/connectors[/new|/:id]    Operations Portal: enrichment connectors
  *   /ops/credentials[/new|/:id]   Operations Portal: credentials (auth for connectors)
+ *   /ops/pipeline[/executions[/:caseNumber]]  Operations Portal: intake pipeline diagram + per-case runs
+ *   /ops/compensation[/new|/:id]  Operations Portal: compensation rules, guardrails, backtest
  *   /ops/templates[/<name>]       Operations Portal: Jinja prompt templates (+ preview, test lab, costs)
  *   /ops/samples[/new|/:id]       Operations Portal: sample cases for the test lab
  */
@@ -47,12 +53,18 @@ export function App() {
               <Route path="queues" element={<QueueListPage />} />
               <Route path="queues/new" element={<QueueEditorPage />} />
               <Route path="queues/:queueId" element={<QueueEditorPage />} />
+              <Route path="pipeline" element={<PipelinePage />} />
+              <Route path="pipeline/executions" element={<PipelineExecutionsPage />} />
+              <Route path="pipeline/executions/:caseNumber" element={<PipelineExecutionPage />} />
               <Route path="connectors" element={<ConnectorListPage />} />
               <Route path="connectors/new" element={<ConnectorEditorPage />} />
               <Route path="connectors/:connectorId" element={<ConnectorEditorPage />} />
               <Route path="credentials" element={<CredentialListPage />} />
               <Route path="credentials/new" element={<CredentialEditorPage />} />
               <Route path="credentials/:credentialId" element={<CredentialEditorPage />} />
+              <Route path="compensation" element={<CompensationListPage />} />
+              <Route path="compensation/new" element={<CompensationRuleEditorPage />} />
+              <Route path="compensation/:ruleId" element={<CompensationRuleEditorPage />} />
               <Route path="templates" element={<PromptTemplateListPage />} />
               <Route path="templates/*" element={<PromptTemplateEditorPage />} />
               <Route path="samples" element={<SampleCaseListPage />} />

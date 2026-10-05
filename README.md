@@ -1,6 +1,8 @@
 # Local CRM
 
-A customer care **resolution engine**. It takes in customer cases, enriches them with data from the business's own systems, routes each one to the right queue, and drafts replies with AI for an agent to review. A configurable compensation matrix comes next.
+A customer care **resolution engine**. It takes in customer cases, enriches them with data from the business's own systems, routes each one to the right queue, decides compensation with rules the business configures, and drafts replies with AI for an agent to review.
+
+> **New here?** Business users: read the **[Business handbook](docs/handbooks/business-handbook.md)**. Connecting your own systems: the **[Integration guide](docs/handbooks/integration-guide.md)**. Working on the platform: the **[Developer handbook](docs/handbooks/developer-handbook.md)**.
 
 This README is the **one place to start**. It explains what the product does and how it's built, and links to the detailed guide for each part. Each folder's own README goes deeper, but you shouldn't need to hunt through them.
 
@@ -29,8 +31,10 @@ Early, but working end to end on a laptop.
 | Queue routing (rule builder, priorities, live "which queue?" test), manual reroute | ✅ Built |
 | Operations Portal: dashboard, queues, connectors, credentials, prompt templates, sample cases | ✅ Built |
 | Enrichment: connectors to any HTTP API, shared credentials (API key, bearer, basic, OAuth 2.0, generated tokens), background worker | ✅ Built |
+| Intake pipeline view: diagram of every step a case goes through, plus each case's run (Step Functions–style) | ✅ Built |
 | AI reply drafting: layered Jinja prompt templates, PII masking, test lab across Claude models, cost projections | ✅ Built (needs an Anthropic API key) |
-| Compensation matrix and payouts | ⏭️ Next |
+| Compensation matrix: rules, guardrails (approval threshold, repeat claims), approvals, backtest | ✅ Built |
+| Payouts (actually issuing compensation) | ⏭️ Next |
 | Real email / channel connectors, SLA timers, approvals, AI auto-send, sign-in | 🗓️ Planned |
 
 ---
@@ -73,7 +77,8 @@ Queues are checked in priority order, and the first one whose conditions match g
 
 ### Enrichment (connectors and credentials)
 A connector is an API call configured in the UI: the request (with `{{case fields}}` placeholders), authentication, which response fields to keep, when to run, and the retry policy. Credentials are shared across connectors. Secrets are encrypted and write-only, and generated tokens are cached and refreshed automatically. Calls run on a background worker and are protected against SSRF.
-→ [Codebase guide §10](docs/dev/codebase-guide.md#10-enrichment-connectors-credentials-and-the-worker)
+**Operations → Pipeline** draws the whole flow: ① ② ③ API steps in run order (with which step uses data from which), then routing and compensation. Its **Executions** tab shows every case's run step by step, with the request, timing and data returned, like an AWS Step Functions execution graph.
+→ [Integration guide](docs/handbooks/integration-guide.md) (for your customers' engineers) · [Codebase guide §10](docs/dev/codebase-guide.md#10-enrichment-connectors-credentials-and-the-worker), [§13](docs/dev/codebase-guide.md#13-intake-pipeline-view)
 
 ### AI reply drafting
 Each draft is built from **Jinja templates in layers**. If two layers conflict, the earlier one wins:
@@ -121,8 +126,12 @@ Notes:
 - Prompt caching is set up but isn't reducing costs yet: the cached part of the prompt is probably below the minimum cacheable length.
 - A test-lab run shows its estimated cost before you start it. The run above (4 drafts) cost $0.02.
 
+### Compensation matrix
+Each business writes its own rules for what a customer gets: a refund, credit, voucher, replacement, points, or nothing. They're checked in priority order and the first match decides. The amount is fixed or a percentage of a case value (e.g. 25% of the order total), with an optional cap. A decision goes to a person for approval when the rule says so, the amount is above the queue's threshold, or the customer was compensated recently. The **backtest** shows what the rules would have decided and cost on recent cases before you switch them on. AI drafts only mention compensation once it's approved.
+→ [Codebase guide §12](docs/dev/codebase-guide.md#12-compensation-matrix)
+
 ### Operations Portal
-This is for managers. It has a dashboard (open cases, a queue × status table) and the editors for queues, connectors, credentials, prompt templates and sample cases.
+This is for managers. It has a dashboard (open cases, a queue × status table), the intake pipeline view, and the editors for queues, connectors, credentials, compensation rules, prompt templates and sample cases.
 
 ---
 
@@ -158,6 +167,7 @@ The backend is layered: **api → services → domain / repositories → models*
 │   └── app/ai/templates/ Prompt template layers + starter pack     → its README.md
 ├── frontend/             React UI                                  → frontend/README.md
 ├── docs/
+│   ├── handbooks/        Business and developer handbooks (+ screenshots and the script that makes them)
 │   ├── dev/              Developer guides (setup, codebase, database)
 │   ├── 04-product-ideas.md  Running log of product ideas and feedback
 │   ├── 05-data-model.md     Long-term data model
@@ -188,7 +198,13 @@ docker compose up -d          # restart so the API and worker read it
 
 `.env` is git-ignored. Never put the key anywhere else. Then tick **Allow AI to draft replies** on a queue. Step-by-step instructions and troubleshooting: [Turn on AI drafting](docs/dev/local-setup.md#turn-on-ai-drafting-anthropic-api-key).
 
-For a walkthrough (creating a business, sending a case, setting up a connector, testing templates) and for running without Docker, see [docs/dev/local-setup.md](docs/dev/local-setup.md).
+**Load demo data** (a made-up shop with queues, connectors, compensation rules and cases):
+
+```bash
+cd backend && uv run python scripts/seed_demo.py
+```
+
+Then follow the [Business handbook](docs/handbooks/business-handbook.md). For running without Docker and step-by-step walkthroughs, see [docs/dev/local-setup.md](docs/dev/local-setup.md).
 
 ---
 
@@ -196,7 +212,7 @@ For a walkthrough (creating a business, sending a case, setting up a connector, 
 
 | Task | Command (from the folder) |
 |---|---|
-| Backend tests, types, lint | `cd backend && uv run pytest && uv run mypy app tests && uv run ruff check .` |
+| Backend tests, types, lint | `cd backend && uv run pytest && uv run mypy app tests scripts && uv run ruff check .` |
 | Frontend tests, types, build | `cd frontend && npm test && npm run typecheck && npm run build` |
 | New database migration | `cd backend && uv run alembic revision --autogenerate -m "…"` (then read it) |
 
@@ -209,8 +225,11 @@ CI runs all of these on every pull request. To add a feature, follow the worked 
 | Document | For | What's in it |
 |---|---|---|
 | **This README** | Everyone | What it is, how it works, where everything is |
+| [**Business handbook**](docs/handbooks/business-handbook.md) | Agents, team leads, managers | How to use every feature, with screenshots; recipes; troubleshooting |
+| [**Integration guide**](docs/handbooks/integration-guide.md) | A business's own engineers | Connecting their APIs: request templates, authentication, picking fields, chaining steps, failures, executions, API automation, security, checklist |
+| [**Developer handbook**](docs/handbooks/developer-handbook.md) | New engineers | Day-one setup with demo data, how a case flows through the code, feature map, rules, recipes, first week |
 | [docs/dev/local-setup.md](docs/dev/local-setup.md) | Anyone running it | Docker and non-Docker setup, walkthroughs, AI key, troubleshooting |
-| [docs/dev/codebase-guide.md](docs/dev/codebase-guide.md) | Developers | Layers, request walkthrough, conventions, routing / enrichment / AI internals, full API endpoint list |
+| [docs/dev/codebase-guide.md](docs/dev/codebase-guide.md) | Developers | Layers, request walkthrough, conventions, routing / enrichment / AI / compensation internals, full API endpoint list |
 | [docs/dev/database-guide.md](docs/dev/database-guide.md) | Developers | Tables today, columns vs JSON, migrations, transactions, locking (written for document-database developers) |
 | [backend/README.md](backend/README.md) | Backend developers | Commands and a map of every backend folder |
 | [frontend/README.md](frontend/README.md) | Frontend developers | Routes, components, conventions, tests |
@@ -225,7 +244,7 @@ CI runs all of these on every pull request. To add a feature, follow the worked 
 
 ## 8. Principles
 
-1. **The AI never decides anything that matters.** Eligibility and compensation come from rules the business configures. The model only writes the reply.
+1. **The AI never decides anything that matters.** Compensation comes from rules the business configures (the compensation matrix), and the AI only mentions it once it's approved. The model only writes the reply.
 2. **A human reviews every draft** until a queue explicitly allows otherwise.
 3. **The model never sees raw personal data.** It's masked before the prompt is built and restored afterwards.
 4. **Everything is auditable.** Every status change, reroute, enrichment and draft is recorded with who did it and why.

@@ -4,6 +4,7 @@ import { api, errorMessage } from "../api/client";
 import type { QueueInput, RoutingPreview } from "../api/types";
 import { formatCaseNumber, formatCategory } from "../lib/format";
 import { useLoad } from "../lib/useLoad";
+import { EvaluationList } from "./EvaluationList";
 
 interface Props {
   tenantId: string;
@@ -11,13 +12,6 @@ interface Props {
   buildDraft: () => QueueInput | null;
   /** When editing an existing queue, its id, so the draft replaces it in the test. */
   draftQueueId?: string;
-}
-
-function formatActual(actual: unknown): string {
-  if (actual === null || actual === undefined || actual === "") return "nothing";
-  if (Array.isArray(actual)) return actual.length ? actual.join(", ") : "no matching words";
-  const text = String(actual);
-  return text.length > 80 ? `${text.slice(0, 80)}…` : text;
 }
 
 /**
@@ -97,38 +91,17 @@ export function RoutingPreviewPanel({ tenantId, buildDraft, draftQueueId }: Prop
               <strong>No queue matches: the case would stay unrouted.</strong>
             )}
           </p>
-          <ol className="evaluations">
-            {result.evaluations.map((e, i) => (
-              <li key={`${e.queue_id ?? "draft"}-${i}`} data-winner={e.is_winner || undefined}>
-                <div className="evaluation-head">
-                  <span className={e.matched ? "mark-yes" : "mark-no"} aria-hidden>
-                    {e.matched ? "✓" : "✗"}
-                  </span>
-                  <strong>{e.queue_name}</strong>
-                  <span className="muted small">priority {e.priority}</span>
-                  {e.is_draft && <span className="tag">your changes</span>}
-                  {e.is_winner && <span className="tag tag-accent">wins</span>}
-                  {!e.is_winner && e.matched && <span className="muted small">(matched, but lower priority)</span>}
-                  <span className="sr-only">{e.matched ? "matched" : "did not match"}</span>
-                </div>
-                {e.conditions.length === 0 ? (
-                  <p className="muted small">No conditions: matches everything.</p>
-                ) : (
-                  <ul className="condition-results">
-                    {e.conditions.map((c, j) => (
-                      <li key={j}>
-                        <span className={c.matched ? "mark-yes" : "mark-no"} aria-hidden>
-                          {c.matched ? "✓" : "✗"}
-                        </span>{" "}
-                        {c.description}
-                        <span className="muted"> · case has: {formatActual(c.actual)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ol>
+          <EvaluationList
+            items={result.evaluations.map((e, i) => ({
+              key: `${e.queue_id ?? "draft"}-${i}`,
+              name: e.queue_name,
+              priority: e.priority,
+              matched: e.matched,
+              isWinner: e.is_winner,
+              isDraft: e.is_draft,
+              conditions: e.conditions,
+            }))}
+          />
         </div>
       )}
     </div>

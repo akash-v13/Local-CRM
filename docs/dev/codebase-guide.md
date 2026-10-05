@@ -1,6 +1,6 @@
 # Codebase Guide
 
-How the code is organized, why, and how to add to it. Sections 1–6 cover the backend in general, section 7 the frontend (details in [frontend/README.md](../../frontend/README.md)), sections 8–11 each feature (routing, reporting, enrichment, AI drafting), and section 12 lists the API endpoints.
+How the code is organized, why, and how to add to it. Sections 1–6 cover the backend in general, section 7 the frontend (details in [frontend/README.md](../../frontend/README.md)), sections 8–13 each feature (routing, reporting, enrichment, AI drafting, compensation, pipeline view), and section 14 lists the API endpoints.
 
 ## 1. The layers
 
@@ -72,7 +72,7 @@ Say we want **"reroute a case to another queue"** (Idea 8: manual reroute that p
 5. **Service:** add `CaseService.reroute(...)`. Load the case and the queue (404 if either is missing), set `queue_id` and `assignment_pinned = True`, transition to `Queued`, add a `case.rerouted` event, and commit once.
 6. **Route:** add `POST /tenants/{tenant_id}/cases/{case_id}/reroute` in `api/cases.py`. Keep it three lines: take the body, call the service, return `CaseRead`.
 7. **Tests:** in `tests/test_cases_api.py`, cover the happy path, an unknown queue (404), another tenant's queue (404), and the event being recorded.
-8. **Check:** `uv run pytest && uv run mypy app tests && uv run ruff check .`
+8. **Check:** `uv run pytest && uv run mypy app tests scripts && uv run ruff check .`
 
 ## 5. Conventions
 
@@ -88,7 +88,7 @@ Say we want **"reroute a case to another queue"** (Idea 8: manual reroute that p
 | Piece | Where it will go |
 |---|---|
 | Authentication / tenant from token | `api/` dependency replacing the `tenant_id` path parameter |
-| Compensation matrix + payouts | `domain/compensation.py`, new tables; fills `decisions.compensation` for prompt templates |
+| Payouts (issuing compensation) | payout connectors with idempotency keys; the matrix already decides what to pay |
 | Real email / channel connectors (send and receive) | replaces the simulated send and "Simulate customer reply" |
 | SLA timers, approvals, AI auto-send | settings already saved on queues; enforcement not built |
 | AI recategorization | Idea 8 in the product ideas log |
@@ -218,7 +218,47 @@ flowchart LR
 
 **Configuration:** `ANTHROPIC_API_KEY` (backend and worker). Without it drafting is off and every AI action says how to enable it.
 
-## 12. API endpoints
+## 12. Compensation matrix
+
+The matrix decides the money; the AI only writes the message.
+
+```mermaid
+flowchart LR
+    Routed[Case routed] --> Rules["Rules in priority order<br/>first match decides"]
+    Rules --> Amount["Amount<br/>fixed, or % of a case field, capped"]
+    Amount --> Guard{"Guardrails<br/>rule says approve? above queue threshold?<br/>repeat claim? amount unknown?"}
+    Guard -- no --> Approved[Approved]
+    Guard -- yes --> Pending[Waiting for approval] --> Review{Agent / manager}
+    Review --> Approved
+    Review --> Rejected[Rejected]
+    Approved --> AI["AI drafts include it"]
+```
+
+| Piece | Where | Notes |
+|---|---|---|
+| Decision logic | `app/domain/compensation.py` | Pure: `decide(rules, context, history, settings, approval_threshold)`. Conditions reuse the routing engine (`evaluate_criteria`), so rules can test category, attributes, enrichment data and the queue. |
+| Rules | `models/compensation_rule.py`, `CompensationService.save_rule` | Priority, conditions, `outcome` (type, fixed/percent amount, cap, currency, always-approve). Deactivated, never deleted. |
+| Guardrails | `tenants.compensation_settings` + each queue's `approval_threshold` | Repeat-claim lookback (days) and count; default currency. |
+| When it runs | end of `CaseService.apply_routing` | Only if the business has active rules and the case has no decision yet. "Decide again" on the case re-runs it; not allowed once approved or rejected. |
+| Where it's stored | `case.decisions["compensation"]` (`CompensationDecisionData`) | Status, rule, amount and how it was worked out, matched conditions, approval reasons, history used, who reviewed it. Events: `compensation.decided/approved/rejected`. |
+| AI drafts | `services/replies.py` `approved_compensation` | Only an **approved** decision's label (e.g. "Refund of USD 30.00") reaches the prompt as `decisions.compensation`. |
+| Live test & backtest | `CompensationService.preview / simulate` | Test any case with an unsaved rule; backtest runs recent cases oldest first, counting simulated compensation toward repeat claims. Nothing is changed. |
+
+Not built yet: payouts (issuing the money), regulation packs, rule versioning with effective dates, "highest value" hit policy.
+
+## 13. Intake pipeline view
+
+Operations → Pipeline draws what every new case goes through, and what happened to each case. It's a **view** over existing configuration and stored results, so nothing extra is recorded.
+
+| Piece | Where | Notes |
+|---|---|---|
+| Definition | `PipelineService.definition` | Active connectors in run order, then queues, then compensation rules. **Dependencies** come from each request's `{{enrichment.<key>.<field>}}` placeholders; **problems** flag a dependency on a later, inactive or unknown step, or on a field that isn't saved. |
+| Executions | `PipelineService.executions / execution` | Built from `case.enrichment` (per-connector status, request preview, HTTP status, duration, data), the latest `case.routed` / `case.rerouted` and `enrichment.completed` events, and `decisions.compensation`. Steps in today's pipeline with no result show as *pending* (Intake) or *not run* (added later); results from removed connectors are kept at the end. |
+| UI | `PipelinePage` (+ Executions tab), `PipelineExecutionPage`, `PipelineDiagram`, `lib/pipeline.ts` | One diagram component for both views; in an execution, each node gets a state (icon + label + border). |
+
+Steps run strictly in sequence today. Parallel branches would mean changing `EnrichmentService.enrich_case` to group steps by dependency; the diagram already knows the dependencies.
+
+## 14. API endpoints
 
 Full, always-current reference: http://localhost:8000/docs.
 
@@ -259,6 +299,16 @@ Full, always-current reference: http://localhost:8000/docs.
 | GET | `/tenants/{t}/prompt-templates/variables`, `/platform` | Variables reference / the locked platform rules |
 | GET | `/tenants/{t}/prompt-templates/{name}/projection?monthly_volume=` | Cost per reply / 1,000 / month per model |
 | GET, POST, PUT | `/tenants/{t}/sample-cases[/{id}]` | Test-lab inputs |
+| GET, POST | `/tenants/{t}/compensation/rules` | List (decision order) / create compensation rules |
+| GET, PUT | `/tenants/{t}/compensation/rules/{id}` | Read / replace (deactivate, never delete) |
+| GET, PUT | `/tenants/{t}/compensation/settings` | Repeat-claim check and default currency |
+| POST | `/tenants/{t}/compensation/preview` | What a case would get, with an optional unsaved rule (explains every rule) |
+| POST | `/tenants/{t}/compensation/simulate` | Backtest over the last N days (optionally with an unsaved rule) |
+| POST | `/tenants/{t}/cases/{c}/compensation/decide` | Run the matrix again for a case |
+| POST | `/tenants/{t}/cases/{c}/compensation/approve`, `/reject` | Review a pending decision (`note` required to reject) |
+| GET | `/tenants/{t}/pipeline` | The intake pipeline: steps in order, dependencies, problems, queues, rules |
+| GET | `/tenants/{t}/pipeline/executions?outcome=&limit=` | Recent cases' runs (per-step status, time, queue, compensation) |
+| GET | `/tenants/{t}/pipeline/executions/{c}` | One case's run with requests, data, routing and compensation |
 | POST | `/tenants/{t}/template-tests/estimate` | Cost of a test run before running it (free) |
 | POST, GET | `/tenants/{t}/template-tests[/{id}]` | Start a test run (worker) / read progress and results |
 

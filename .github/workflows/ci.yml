@@ -34,7 +34,7 @@ jobs:
       - name: Lint
         run: uv run ruff check .
       - name: Type check (strict)
-        run: uv run mypy app tests
+        run: uv run mypy app tests scripts
       - name: Tests
         run: uv run pytest -q
 

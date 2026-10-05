@@ -10,9 +10,11 @@ React 19 + TypeScript, built with Vite. Two areas:
 | `/ops` | **Operations Portal: dashboard**: open cases, where they're waiting, queue × status table. |
 | `/ops/queues` | **Operations Portal: queues** in routing order; activate/deactivate. |
 | `/ops/queues/new`, `/ops/queues/:id` | **Queue editor**: name, priority, match conditions, handling settings (incl. AI model and effort), live routing test. |
+| `/ops/pipeline`, `/ops/pipeline/executions`, `/ops/pipeline/executions/:caseNumber` | **Intake pipeline**: diagram of every step a new case goes through (click a step for details); **Executions** lists each case's run; one case's run on the diagram. |
 | `/ops/connectors`, `/ops/connectors/new`, `/ops/connectors/:id` | **Connectors**: API calls that enrich cases. The editor is laid out as steps: Basics → Request → Authentication → Test & pick fields → Fields to keep → When to run → Order & reliability. |
 | `/ops/templates` | **Prompt templates**: the four layers (locked platform rules → baseline → queue persona → case type), which template each queue and category uses, and **New template**. |
 | `/ops/templates/<name>` (e.g. `/ops/templates/category/Complaint_Delivery.jinja`) | **Template editor**: Jinja source with clickable variables, checks, live **preview** on a case, download/upload `.jinja`, **test lab**, **cost projection**, **version history**. |
+| `/ops/compensation`, `/ops/compensation/new`, `/ops/compensation/:id` | **Compensation**: rules in decision order, guardrails (repeat claims, currency), **backtest**; the rule editor has conditions, outcome, approval, and a live test on a case. |
 | `/ops/samples`, `/ops/samples/new`, `/ops/samples/:id` | **Sample cases**: test inputs for the test lab. |
 | `/ops/credentials`, `/ops/credentials/new`, `/ops/credentials/:id` | **Credentials**: API key, bearer, basic, OAuth 2.0 client credentials, custom token request. Secrets are write-only; token types have "Generate token now". |
 
@@ -56,6 +58,8 @@ src/
 │   ├── criteria.ts       Queue rules ⇄ editor form state, plain-language summaries
 │   ├── credentials.ts    Credential types described once; the editor's form is built from it
 │   ├── templateNames.ts  Prompt template names and fallback chains (mirrors the backend)
+│   ├── compensation.ts   Compensation labels and plain-language outcome summaries
+│   ├── pipeline.ts       Pipeline / execution → diagram nodes
 │   └── jsonpath.ts       Read JSON by dotted path (mirrors the backend)
 ├── components/           Reusable pieces (each file has a comment explaining it)
 │   ├── Layout            Top bar + page outlet
@@ -70,6 +74,10 @@ src/
 │   ├── QueueCard         Case's queue: run routing again / move to another queue
 │   ├── ConditionBuilder  Queue match-rule editor (field · operator · value rows)
 │   ├── RoutingPreviewPanel  "Which queue would this case land in?" test
+│   ├── EvaluationList    Why each queue / rule did or didn't match (shared by both editors)
+│   ├── CompensationCard  Case page: decision, why, approve / reject, decide again
+│   ├── SimulationPanel   Compensation backtest on recent cases
+│   ├── PipelineDiagram   The intake flow, top to bottom; execution states per step
 │   ├── StatTile          Headline number (KPI)
 │   ├── QueueHeatTable    Queue × status counts, shaded by volume
 │   ├── TemplateField     Code-style input with an "Insert field…" placeholder menu
@@ -81,7 +89,7 @@ src/
 │   └── CostProjectionPanel  Per-reply and monthly cost per model
 ├── pages/                One file per route
 │   └── ops/              Operations Portal pages (dashboard, queues, connectors, credentials,
-│                         prompt templates, sample cases)
+│                         pipeline, compensation, prompt templates, sample cases)
 └── test/                 Test setup and fixtures
 ```
 
@@ -109,6 +117,9 @@ Component tests use Vitest + Testing Library and run in a simulated browser (jsd
 - `pages/ops/CredentialEditorPage.test.tsx`: only the fields each credential type needs; missing fields explained
 - `lib/criteria.test.ts`: rule ⇄ form round-trip, validation, summaries
 - `lib/format.test.ts`, `lib/jsonpath.test.ts`: case numbers from URLs; JSON paths read like the backend
+- `CompensationCard.test.tsx`: explains a pending decision, approve as the current agent, reject needs a note, final decisions can't be redone
+- `lib/compensation.test.ts`: outcome summaries and money formatting
+- `lib/pipeline.test.ts`: pipeline and execution diagram nodes, dependencies, states
 - `lib/templateNames.test.ts`: template names and fallbacks resolve exactly like the backend
 
 ## Charts and color

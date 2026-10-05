@@ -7,7 +7,18 @@ Interactive API docs: http://localhost:8000/docs
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api import cases, connectors, credentials, health, queues, replies, reports, tenants
+from app.api import (
+    cases,
+    compensation,
+    connectors,
+    credentials,
+    health,
+    pipeline,
+    queues,
+    replies,
+    reports,
+    tenants,
+)
 from app.domain.errors import (
     AIDisabledError,
     AIDraftFailedError,
@@ -36,6 +47,9 @@ app.include_router(connectors.router)
 app.include_router(credentials.router)
 app.include_router(replies.router)
 app.include_router(replies.models_router)
+app.include_router(compensation.router)
+app.include_router(compensation.case_router)
+app.include_router(pipeline.router)
 
 
 # Map domain errors (raised by services) to HTTP responses in one place.

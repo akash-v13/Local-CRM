@@ -120,6 +120,18 @@ Everything except AI drafting works without a key. To turn AI drafting on:
 | "Rate limited by the Anthropic API" | Wait a minute; new accounts have low limits that rise with usage. |
 | "AI drafting is turned off for the 'X' queue" | Tick **Allow AI to draft replies** on that queue. |
 
+## Load demo data
+
+With the stack running, create a made-up shop ("Northwind Outfitters") with queues, connectors to the mock API, compensation rules, a persona template, sample cases and cases in different states:
+
+```bash
+cd backend
+uv run python scripts/seed_demo.py              # free
+uv run python scripts/seed_demo.py --with-ai    # + 2 AI drafts (~$0.02, needs ANTHROPIC_API_KEY)
+```
+
+Pick the new business in the top bar. The [Business handbook](../handbooks/business-handbook.md) uses this data in every screenshot.
+
 ## Try it in the UI
 
 1. Open http://localhost:5173. If there's no tenant yet, type a business name in the top bar and click **Create**.
@@ -155,6 +167,14 @@ docker-compose runs a fake shop/shipping API at `http://mocks:8100` (docs: http:
 6. A queue rule like *Shop orders: totalAmount is greater than 500* now routes on enriched data.
 
 Failure testing: order numbers containing `404`, `500` or `SLOW` make the mock API fail or time out.
+
+### Try the compensation matrix
+
+1. **Operations → Compensation → New rule**: e.g. *Late delivery: 25% refund*, condition *Category is Delivery*, **Refund**, **Percentage of a case value**: 25% of the case attribute `orderTotal`, cap 50.
+2. Pick a case in **Test with a real case** to see what it would get and why, and run the **backtest** to see what the rule would have cost on recent cases. Then **Create rule**.
+3. Submit the test webform (or `POST /cases` with `"attributes": {"orderTotal": 120}`). When the case is routed, the matrix decides: the case page's **Compensation** card shows *Refund of USD 30.00 · Approved*.
+4. Submit a second case with the same email: it's a **repeat claim**, so it waits for approval. Approve or reject it on the case page.
+5. With AI drafting on, a draft for the first case mentions the refund; the second case's draft won't until it's approved.
 
 ### Try AI reply drafting
 

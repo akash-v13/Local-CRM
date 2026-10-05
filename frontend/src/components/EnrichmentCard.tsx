@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 
 import { api, errorMessage } from "../api/client";
 import type { CaseDetail, RunStatus } from "../api/types";
@@ -71,6 +72,7 @@ export function EnrichmentCard({ caseDetail, agentId, onChanged }: Props) {
           {busy ? "Queuing…" : "Re-run enrichment"}
         </button>
       )}
+      <Link className="small" to={`/ops/pipeline/executions/${caseDetail.case_number}`}>View the pipeline run →</Link>
       {error && <p className="error small" role="alert">{error}</p>}
     </div>
   );

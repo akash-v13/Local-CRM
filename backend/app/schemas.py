@@ -888,3 +888,287 @@ class ModelOption(BaseModel):
     input_per_mtok: float
     output_per_mtok: float
     supports_effort: bool
+
+
+# ----- compensation matrix ----------------------------------------------------------------
+
+CompensationTypeName = Literal["refund", "store_credit", "voucher", "replacement", "points", "none"]
+
+
+class CompensationOutcome(BaseModel):
+    """What a matching rule gives the customer."""
+
+    type: CompensationTypeName
+    amount_mode: Literal["fixed", "percent"] = "fixed"
+    amount: float | None = Field(default=None, ge=0, description="For amount_mode=fixed.")
+    percent: float | None = Field(
+        default=None, gt=0, le=1000, description="For amount_mode=percent."
+    )
+    percent_of: str | None = Field(
+        default=None, description="Numeric case field, e.g. enrichment.shop_orders.orderTotal."
+    )
+    cap: float | None = Field(default=None, ge=0, description="Never more than this.")
+    currency: str | None = Field(
+        default=None, pattern=r"^[A-Z]{3}$", description="Default: the business's currency."
+    )
+    requires_approval: bool = Field(default=False, description="Always ask a person first.")
+
+    @model_validator(mode="after")
+    def _check(self) -> "CompensationOutcome":
+        if self.type not in ("refund", "store_credit", "voucher", "points"):
+            return self
+        if self.amount_mode == "fixed" and self.amount is None:
+            raise ValueError("Enter an amount.")
+        if self.amount_mode == "percent":
+            if self.percent is None or not self.percent_of:
+                raise ValueError("Enter a percentage and the field it's a percentage of.")
+            if not is_known_field(self.percent_of):
+                raise ValueError(f"Unknown field '{self.percent_of}'.")
+        return self
+
+
+class CompensationRuleCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+    priority: int = Field(ge=0, description="Lower = checked first; the first match decides.")
+    is_active: bool = True
+    match_criteria: MatchCriteria = Field(default_factory=MatchCriteria)
+    outcome: CompensationOutcome
+
+
+class CompensationRuleRead(CompensationRuleCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+
+class CompensationSettingsData(BaseModel):
+    """Business-wide guardrails for the matrix."""
+
+    repeat_lookback_days: int = Field(default=90, ge=1, le=3650)
+    repeat_max_count: int = Field(
+        default=1,
+        ge=1,
+        le=100,
+        description="Past compensations in the window that trigger approval.",
+    )
+    currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
+
+
+class PastCompensationRead(BaseModel):
+    case_number: int
+    decided_at: datetime
+    type: str
+    amount: float | None
+
+
+CompensationStatus = Literal[
+    "approved", "pending_approval", "rejected", "no_compensation", "no_match"
+]
+
+
+class CompensationDecisionData(BaseModel):
+    """Stored on the case as `decisions.compensation`.
+
+    status: approved (automatically or by a person) · pending_approval ·
+    rejected · no_compensation (a rule decided nothing is owed) · no_match.
+    """
+
+    status: CompensationStatus
+    rule_id: uuid.UUID | None = None
+    rule_name: str | None = None
+    type: str | None = None
+    amount: float | None = None
+    currency: str
+    label: str | None = Field(default=None, description='e.g. "Refund of USD 50.00".')
+    amount_explanation: str
+    approval_reasons: list[str] = Field(default_factory=list)
+    matched_conditions: list[str] = Field(default_factory=list)
+    history: list[PastCompensationRead] = Field(default_factory=list)
+    decided_at: datetime
+    decided_by: str = Field(description='"system" or the person who asked for a new decision.')
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    review_note: str | None = None
+
+
+class CompensationReview(BaseModel):
+    actor_id: str = Field(min_length=1)
+    note: str | None = Field(default=None, description="Required when rejecting.")
+
+
+class DecideRequest(BaseModel):
+    actor_id: str | None = None
+
+
+class RuleEvaluationRead(BaseModel):
+    rule_id: uuid.UUID | None
+    rule_name: str
+    priority: int
+    matched: bool
+    is_winner: bool
+    is_draft: bool
+    conditions: list[ConditionResultRead]
+
+
+class CompensationPreviewRequest(BaseModel):
+    case_number: int
+    draft: CompensationRuleCreate | None = Field(
+        default=None, description="Unsaved rule to test (e.g. from the editor)."
+    )
+    draft_rule_id: uuid.UUID | None = Field(
+        default=None, description="If the draft edits an existing rule, its id."
+    )
+
+
+class CompensationPreview(BaseModel):
+    decision: CompensationDecisionData
+    evaluations: list[RuleEvaluationRead]
+
+
+class SimulationRequest(BaseModel):
+    days: int = Field(default=90, ge=1, le=730, description="Cases created in the last N days.")
+    draft: CompensationRuleCreate | None = None
+    draft_rule_id: uuid.UUID | None = None
+
+
+class SimulationRow(BaseModel):
+    rule_id: uuid.UUID | None
+    rule_name: str
+    is_draft: bool
+    cases: int
+    needs_approval: int
+    total_amount: float
+    example_case_numbers: list[int]
+
+
+class SimulationResult(BaseModel):
+    """What the matrix would decide for recent cases. Nothing is changed."""
+
+    days: int
+    cases_checked: int
+    cases_matched: int
+    needs_approval: int
+    total_amount: float
+    currency: str
+    rows: list[SimulationRow]
+    no_match_case_numbers: list[int]
+
+
+# ----- intake pipeline (definition + executions) ---------------------------------------------
+
+
+class PipelineDependency(BaseModel):
+    """Data a step's request uses: a case field, or a field saved by an earlier step."""
+
+    source: Literal["case", "step"]
+    path: str = Field(description='The placeholder, e.g. "enrichment.shop_orders.trackingNumber".')
+    step_key: str | None = Field(default=None, description="For source=step: the connector key.")
+    field: str | None = None
+
+
+class PipelineStepField(BaseModel):
+    target: str
+    label: str | None
+    path: str
+
+
+class PipelineConnectorStep(BaseModel):
+    """One enrichment API call, in the order it runs."""
+
+    position: int = Field(description="1-based order in the pipeline.")
+    connector_id: uuid.UUID
+    key: str
+    name: str
+    description: str | None
+    method: str
+    url_template: str
+    credential_name: str | None
+    credential_kind: str | None
+    required: bool
+    timeout_seconds: float
+    max_retries: int
+    run_when: list[str] = Field(description="Conditions in plain words; empty = every case.")
+    run_when_match: Literal["all", "any"]
+    fields: list[PipelineStepField]
+    uses: list[PipelineDependency]
+    problems: list[str] = Field(description="Setup issues, e.g. uses data from a later step.")
+
+
+class PipelineQueue(BaseModel):
+    id: uuid.UUID
+    name: str
+    priority: int
+    conditions: list[str]
+    match: Literal["all", "any"]
+    ai_drafting: bool
+    ai_model: str | None
+
+
+class PipelineRule(BaseModel):
+    id: uuid.UUID
+    name: str
+    priority: int
+    conditions: list[str]
+    outcome: str
+
+
+class PipelineDefinition(BaseModel):
+    """What every new case goes through, in order, before an agent picks it up."""
+
+    connectors: list[PipelineConnectorStep]
+    inactive_connectors: list[str]
+    queues: list[PipelineQueue]
+    compensation_rules: list[PipelineRule]
+    compensation_guardrails: str
+
+
+StepStatus = Literal["ok", "failed", "skipped", "not_run", "pending"]
+
+
+class ExecutionStep(BaseModel):
+    key: str
+    name: str
+    position: int | None = Field(description="Position in the current pipeline; None = removed.")
+    status: StepStatus
+    error: str | None = None
+    http_status: int | None = None
+    duration_ms: int | None = None
+    request: RequestPreview | None = None
+    data: dict[str, Any] = Field(default_factory=dict)
+    missing: list[str] = Field(default_factory=list)
+    fetched_at: datetime | None = None
+
+
+ExecutionOutcome = Literal["ok", "partial", "failed", "in_progress", "no_enrichment"]
+
+
+class ExecutionSummary(BaseModel):
+    case_number: int
+    created_at: datetime
+    customer_name: str | None
+    customer_email: str
+    category: str
+    case_status: str
+    outcome: ExecutionOutcome
+    steps: list[ExecutionStep] = Field(
+        description="Status per step (details only on the detail view)."
+    )
+    total_duration_ms: int
+    queue_name: str | None
+    compensation_status: str | None
+    compensation_label: str | None
+
+
+class ExecutionRouting(BaseModel):
+    queue_name: str | None
+    matched_conditions: list[str]
+    routed_at: datetime | None
+
+
+class ExecutionDetail(ExecutionSummary):
+    routing: ExecutionRouting
+    compensation: dict[str, Any] | None
+    enriched_at: datetime | None
