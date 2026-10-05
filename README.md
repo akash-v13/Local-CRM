@@ -2,6 +2,8 @@
 
 A customer care **resolution engine**. It takes in customer cases, enriches them with data from the business's own systems, routes each one to the right queue, decides compensation with rules the business configures, and drafts replies with AI for an agent to review.
 
+> **New here?** Business users: read the **[Business handbook](docs/handbooks/business-handbook.md)**. Developers: read the **[Developer handbook](docs/handbooks/developer-handbook.md)**.
+
 This README is the **one place to start**. It explains what the product does and how it's built, and links to the detailed guide for each part. Each folder's own README goes deeper, but you shouldn't need to hunt through them.
 
 ---
@@ -163,6 +165,7 @@ The backend is layered: **api → services → domain / repositories → models*
 │   └── app/ai/templates/ Prompt template layers + starter pack     → its README.md
 ├── frontend/             React UI                                  → frontend/README.md
 ├── docs/
+│   ├── handbooks/        Business and developer handbooks (+ screenshots and the script that makes them)
 │   ├── dev/              Developer guides (setup, codebase, database)
 │   ├── 04-product-ideas.md  Running log of product ideas and feedback
 │   ├── 05-data-model.md     Long-term data model
@@ -193,7 +196,13 @@ docker compose up -d          # restart so the API and worker read it
 
 `.env` is git-ignored. Never put the key anywhere else. Then tick **Allow AI to draft replies** on a queue. Step-by-step instructions and troubleshooting: [Turn on AI drafting](docs/dev/local-setup.md#turn-on-ai-drafting-anthropic-api-key).
 
-For a walkthrough (creating a business, sending a case, setting up a connector, testing templates) and for running without Docker, see [docs/dev/local-setup.md](docs/dev/local-setup.md).
+**Load demo data** (a made-up shop with queues, connectors, compensation rules and cases):
+
+```bash
+cd backend && uv run python scripts/seed_demo.py
+```
+
+Then follow the [Business handbook](docs/handbooks/business-handbook.md). For running without Docker and step-by-step walkthroughs, see [docs/dev/local-setup.md](docs/dev/local-setup.md).
 
 ---
 
@@ -201,7 +210,7 @@ For a walkthrough (creating a business, sending a case, setting up a connector, 
 
 | Task | Command (from the folder) |
 |---|---|
-| Backend tests, types, lint | `cd backend && uv run pytest && uv run mypy app tests && uv run ruff check .` |
+| Backend tests, types, lint | `cd backend && uv run pytest && uv run mypy app tests scripts && uv run ruff check .` |
 | Frontend tests, types, build | `cd frontend && npm test && npm run typecheck && npm run build` |
 | New database migration | `cd backend && uv run alembic revision --autogenerate -m "…"` (then read it) |
 
@@ -214,6 +223,8 @@ CI runs all of these on every pull request. To add a feature, follow the worked 
 | Document | For | What's in it |
 |---|---|---|
 | **This README** | Everyone | What it is, how it works, where everything is |
+| [**Business handbook**](docs/handbooks/business-handbook.md) | Agents, team leads, managers | How to use every feature, with screenshots; recipes; troubleshooting |
+| [**Developer handbook**](docs/handbooks/developer-handbook.md) | New engineers | Day-one setup with demo data, how a case flows through the code, feature map, rules, recipes, first week |
 | [docs/dev/local-setup.md](docs/dev/local-setup.md) | Anyone running it | Docker and non-Docker setup, walkthroughs, AI key, troubleshooting |
 | [docs/dev/codebase-guide.md](docs/dev/codebase-guide.md) | Developers | Layers, request walkthrough, conventions, routing / enrichment / AI / compensation internals, full API endpoint list |
 | [docs/dev/database-guide.md](docs/dev/database-guide.md) | Developers | Tables today, columns vs JSON, migrations, transactions, locking (written for document-database developers) |

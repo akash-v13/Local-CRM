@@ -120,6 +120,18 @@ Everything except AI drafting works without a key. To turn AI drafting on:
 | "Rate limited by the Anthropic API" | Wait a minute; new accounts have low limits that rise with usage. |
 | "AI drafting is turned off for the 'X' queue" | Tick **Allow AI to draft replies** on that queue. |
 
+## Load demo data
+
+With the stack running, create a made-up shop ("Northwind Outfitters") with queues, connectors to the mock API, compensation rules, a persona template, sample cases and cases in different states:
+
+```bash
+cd backend
+uv run python scripts/seed_demo.py              # free
+uv run python scripts/seed_demo.py --with-ai    # + 2 AI drafts (~$0.02, needs ANTHROPIC_API_KEY)
+```
+
+Pick the new business in the top bar. The [Business handbook](../handbooks/business-handbook.md) uses this data in every screenshot.
+
 ## Try it in the UI
 
 1. Open http://localhost:5173. If there's no tenant yet, type a business name in the top bar and click **Create**.

@@ -72,7 +72,7 @@ Say we want **"reroute a case to another queue"** (Idea 8: manual reroute that p
 5. **Service:** add `CaseService.reroute(...)`. Load the case and the queue (404 if either is missing), set `queue_id` and `assignment_pinned = True`, transition to `Queued`, add a `case.rerouted` event, and commit once.
 6. **Route:** add `POST /tenants/{tenant_id}/cases/{case_id}/reroute` in `api/cases.py`. Keep it three lines: take the body, call the service, return `CaseRead`.
 7. **Tests:** in `tests/test_cases_api.py`, cover the happy path, an unknown queue (404), another tenant's queue (404), and the event being recorded.
-8. **Check:** `uv run pytest && uv run mypy app tests && uv run ruff check .`
+8. **Check:** `uv run pytest && uv run mypy app tests scripts && uv run ruff check .`
 
 ## 5. Conventions
 
