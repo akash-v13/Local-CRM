@@ -13,7 +13,7 @@ Architecture write-up of a customer care platform I worked on as a contractor fo
 | 5 | [Data Model](05-data-model.md) | Long-term data model: collections, relationships, versioning and indexes. Example case: [case.v2.example.json](case.v2.example.json). |
 | — | [Developer guides](dev/) | [Local setup](dev/local-setup.md), [codebase guide](dev/codebase-guide.md), [database guide](dev/database-guide.md). |
 
-For the product built in this repository (Local CRM), start with the [main README](../README.md) and the handbooks: [business](handbooks/business-handbook.md) · [developer](handbooks/developer-handbook.md).
+For the product built in this repository (Local CRM), start with the [main README](../README.md) and the handbooks: [business](handbooks/business-handbook.md) · [integration](handbooks/integration-guide.md) · [developer](handbooks/developer-handbook.md).
 
 ## The system in one picture
 

@@ -15,6 +15,7 @@
   --accent-text: #ffffff;
   --accent-soft: #e8edff;
   --danger: #c92a2a;
+  --good: #2b8a3e;
   --note-bg: #fff8db;
   --note-border: #f2d675;
   --outbound-bg: #eef2ff;
@@ -40,6 +41,7 @@
     --accent-text: #0f1115;
     --accent-soft: #232a45;
     --danger: #ff6b6b;
+    --good: #69db7c;
     --note-bg: #2e2914;
     --note-border: #6b5a1d;
     --outbound-bg: #1f2540;
@@ -571,7 +573,8 @@ textarea:disabled {
   cursor: pointer;
   margin-bottom: -1px;
 }
-.tab[aria-selected="true"] {
+.tab[aria-selected="true"],
+a.tab[aria-current="page"] {
   color: var(--text);
   border-bottom-color: var(--accent);
   font-weight: 600;
@@ -1635,4 +1638,188 @@ details.card[open] > summary {
 }
 .simulation .stat-row {
   margin: 0.75rem 0;
+}
+
+/* ----- intake pipeline diagram ----- */
+
+.pipeline-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 380px);
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .pipeline-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.pipeline-side {
+  position: sticky;
+  top: 1rem;
+}
+.flow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.flow-item {
+  width: min(100%, 560px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+/* The arrow between steps. */
+.flow-item + .flow-item::before {
+  content: "";
+  display: block;
+  width: 2px;
+  height: 22px;
+  background: var(--border);
+}
+.flow-node {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+}
+.flow-node:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.flow-node.kind-start,
+.flow-node.kind-end,
+.flow-node.kind-start[data-state],
+.flow-node.kind-end[data-state] {
+  border-left: 1px solid var(--border);
+  border-radius: 999px;
+  text-align: center;
+  align-items: center;
+  padding: 0.6rem 1.25rem;
+}
+.flow-node.kind-routing,
+.flow-node.kind-compensation {
+  border-left-color: var(--text-muted);
+}
+.flow-node[data-selected] {
+  outline: 2px solid var(--accent);
+}
+.flow-node[data-dependency] {
+  outline: 2px dashed var(--accent);
+}
+.flow-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.flow-number {
+  font-size: 1.1rem;
+  color: var(--accent);
+}
+.flow-state {
+  margin-left: auto;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.flow-subtitle,
+.flow-uses {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.flow-uses {
+  color: var(--accent);
+}
+.flow-facts {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.flow-node.kind-start .flow-facts,
+.flow-node.kind-end .flow-facts {
+  list-style: none;
+  padding: 0;
+}
+.flow-problem {
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+/* Execution states: border + icon + label (never colour alone). */
+.flow-node[data-state="ok"],
+.flow-node[data-state="done"] {
+  border-left-color: var(--good);
+}
+.flow-node[data-state="failed"] {
+  border-left-color: var(--danger);
+}
+.flow-node[data-state="failed"] .flow-state {
+  color: var(--danger);
+}
+.flow-node[data-state="skipped"],
+.flow-node[data-state="not_run"],
+.flow-node[data-state="waiting"],
+.flow-node[data-state="pending"] {
+  border-left-color: var(--border);
+  border-left-style: dashed;
+}
+.flow-node[data-state="waiting"],
+.flow-node[data-state="not_run"] {
+  opacity: 0.7;
+}
+.step-strip {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+.step-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.step-pill[data-state="failed"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.kv-list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.25rem 0.75rem;
+  margin: 0.5rem 0;
+  font-size: 0.875rem;
+}
+.kv-list dt {
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+.kv-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+a.tab {
+  text-decoration: none;
+}
+.pipeline-layout,
+.filter-bar {
+  margin-top: 1rem;
 }

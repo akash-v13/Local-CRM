@@ -9,6 +9,7 @@ Endpoints (all JSON):
                                → {"access_token": "...", "expires_in": 300}
   GET  /orders/{orderNumber}   Needs "Authorization: Bearer <token>" from /oauth/token.
   GET  /shipments/{tracking}   Needs "X-Api-Key: demo-key".
+  GET  /loyalty/{email}        Needs "Authorization: Bearer demo-loyalty-token".
   GET  /health
 
 Order data is made up but deterministic: the same order number always gives
@@ -32,6 +33,7 @@ app = FastAPI(title="Mock shop & shipping API")
 
 CLIENT_ID, CLIENT_SECRET = "demo-client", "demo-secret"
 API_KEY = "demo-key"
+LOYALTY_TOKEN = "demo-loyalty-token"
 TOKEN_LIFETIME_SECONDS = 300
 _tokens: dict[str, float] = {}  # token → expiry (unix time)
 
@@ -122,4 +124,18 @@ def shipment(
             {"at": "2026-09-05T17:30:00Z", "status": "delayed", "note": reason},
             {"at": "2026-09-09T11:15:00Z", "status": "delivered"},
         ],
+    }
+
+
+@app.get("/loyalty/{email}")
+def loyalty(email: str, authorization: Annotated[str | None, Header()] = None) -> dict[str, Any]:
+    """Loyalty program membership for a customer email (made up, deterministic)."""
+    if authorization != f"Bearer {LOYALTY_TOKEN}":
+        raise HTTPException(401, detail="invalid token")
+    return {
+        "email": email,
+        "memberSince": f"20{_number(email + 'y', 18, 25)}-0{_number(email + 'm', 1, 9)}-01",
+        "points": _number(email + "p", 0, 12000),
+        "ordersLast12Months": _number(email + "o", 1, 24),
+        "compensationClaimsLast12Months": _number(email + "c", 0, 3),
     }

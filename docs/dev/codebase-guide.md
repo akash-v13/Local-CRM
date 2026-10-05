@@ -1,6 +1,6 @@
 # Codebase Guide
 
-How the code is organized, why, and how to add to it. Sections 1–6 cover the backend in general, section 7 the frontend (details in [frontend/README.md](../../frontend/README.md)), sections 8–12 each feature (routing, reporting, enrichment, AI drafting, compensation), and section 13 lists the API endpoints.
+How the code is organized, why, and how to add to it. Sections 1–6 cover the backend in general, section 7 the frontend (details in [frontend/README.md](../../frontend/README.md)), sections 8–13 each feature (routing, reporting, enrichment, AI drafting, compensation, pipeline view), and section 14 lists the API endpoints.
 
 ## 1. The layers
 
@@ -246,7 +246,19 @@ flowchart LR
 
 Not built yet: payouts (issuing the money), regulation packs, rule versioning with effective dates, "highest value" hit policy.
 
-## 13. API endpoints
+## 13. Intake pipeline view
+
+Operations → Pipeline draws what every new case goes through, and what happened to each case. It's a **view** over existing configuration and stored results, so nothing extra is recorded.
+
+| Piece | Where | Notes |
+|---|---|---|
+| Definition | `PipelineService.definition` | Active connectors in run order, then queues, then compensation rules. **Dependencies** come from each request's `{{enrichment.<key>.<field>}}` placeholders; **problems** flag a dependency on a later, inactive or unknown step, or on a field that isn't saved. |
+| Executions | `PipelineService.executions / execution` | Built from `case.enrichment` (per-connector status, request preview, HTTP status, duration, data), the latest `case.routed` / `case.rerouted` and `enrichment.completed` events, and `decisions.compensation`. Steps in today's pipeline with no result show as *pending* (Intake) or *not run* (added later); results from removed connectors are kept at the end. |
+| UI | `PipelinePage` (+ Executions tab), `PipelineExecutionPage`, `PipelineDiagram`, `lib/pipeline.ts` | One diagram component for both views; in an execution, each node gets a state (icon + label + border). |
+
+Steps run strictly in sequence today. Parallel branches would mean changing `EnrichmentService.enrich_case` to group steps by dependency; the diagram already knows the dependencies.
+
+## 14. API endpoints
 
 Full, always-current reference: http://localhost:8000/docs.
 
@@ -294,6 +306,9 @@ Full, always-current reference: http://localhost:8000/docs.
 | POST | `/tenants/{t}/compensation/simulate` | Backtest over the last N days (optionally with an unsaved rule) |
 | POST | `/tenants/{t}/cases/{c}/compensation/decide` | Run the matrix again for a case |
 | POST | `/tenants/{t}/cases/{c}/compensation/approve`, `/reject` | Review a pending decision (`note` required to reject) |
+| GET | `/tenants/{t}/pipeline` | The intake pipeline: steps in order, dependencies, problems, queues, rules |
+| GET | `/tenants/{t}/pipeline/executions?outcome=&limit=` | Recent cases' runs (per-step status, time, queue, compensation) |
+| GET | `/tenants/{t}/pipeline/executions/{c}` | One case's run with requests, data, routing and compensation |
 | POST | `/tenants/{t}/template-tests/estimate` | Cost of a test run before running it (free) |
 | POST, GET | `/tenants/{t}/template-tests[/{id}]` | Start a test run (worker) / read progress and results |
 

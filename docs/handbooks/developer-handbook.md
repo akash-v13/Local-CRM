@@ -11,6 +11,7 @@
 | Tables, JSON columns, migrations, transactions | [dev/database-guide.md](../dev/database-guide.md) |
 | Backend / frontend folder maps and commands | [backend/README.md](../../backend/README.md), [frontend/README.md](../../frontend/README.md) |
 | What the product does, from the user's side | [Business handbook](business-handbook.md) |
+| How *customers'* engineers connect their APIs (connectors, auth, chaining, executions) | [Integration guide](integration-guide.md) |
 
 ---
 
@@ -145,7 +146,8 @@ sequenceDiagram
 | Enrichment | `connectors/`, `services/enrichment.py`, `services/connectors.py`, `services/credentials.py`, `security/`, `worker.py` | `ConnectorEditorPage`, `CredentialEditorPage`, `JsonTree`, `EnrichmentCard` | `test_enrichment`, `test_connectors_api`, `test_credentials`, `test_ssrf` | [§10](../dev/codebase-guide.md#10-enrichment-connectors-credentials-and-the-worker) |
 | AI drafting | `ai/` (engine, context, pii, drafter, checks, models), `services/replies.py`, `services/template_tests.py` | `PromptTemplate*Page`, `TemplateTestLab`, `CostProjectionPanel`, `DraftPanel` | `test_ai_units`, `test_ai_drafting` | [§11](../dev/codebase-guide.md#11-ai-reply-drafting), [template guide](../../backend/app/ai/templates/README.md) |
 | Compensation | `domain/compensation.py`, `services/compensation.py`, `api/compensation.py` | `Compensation*Page`, `CompensationCard`, `SimulationPanel` | `test_compensation`, `CompensationCard.test` | [§12](../dev/codebase-guide.md#12-compensation-matrix) |
-| Demo data | `scripts/seed_demo.py` | — | (runs the whole flow) | this handbook |
+| Intake pipeline view | `services/pipeline.py` (definition, dependencies from placeholders, executions from stored results), `api/pipeline.py` | `PipelinePage` (+ Executions), `PipelineExecutionPage`, `PipelineDiagram`, `lib/pipeline.ts` | `test_pipeline`, `lib/pipeline.test.ts` | [§13](../dev/codebase-guide.md#13-intake-pipeline-view), [Integration guide](integration-guide.md) |
+| Demo data | `scripts/seed_demo.py`, `mocks/shop.py` (orders, shipments, loyalty) | — | (runs the whole flow) | this handbook |
 
 ---
 
@@ -204,7 +206,7 @@ These rules protect customer data and money.
 3. **Route:** add it in `api/<area>.py`. Keep it to about three lines: parse, call the service, return.
 4. **New router?** Include it in `main.py`. New error type? Add it to `domain/errors.py` and `ERROR_STATUS_CODES`.
 5. **Tests:** cover the happy path, a 404 for another tenant, and validation (422).
-6. **Docs:** add a row to the endpoint table ([Codebase §13](../dev/codebase-guide.md#13-api-endpoints)).
+6. **Docs:** add a row to the endpoint table ([Codebase §14](../dev/codebase-guide.md#14-api-endpoints)).
 
 The full worked example is in [Codebase §4](../dev/codebase-guide.md#4-adding-a-feature-worked-example).
 

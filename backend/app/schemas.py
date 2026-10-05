@@ -1055,3 +1055,120 @@ class SimulationResult(BaseModel):
     currency: str
     rows: list[SimulationRow]
     no_match_case_numbers: list[int]
+
+
+# ----- intake pipeline (definition + executions) ---------------------------------------------
+
+
+class PipelineDependency(BaseModel):
+    """Data a step's request uses: a case field, or a field saved by an earlier step."""
+
+    source: Literal["case", "step"]
+    path: str = Field(description='The placeholder, e.g. "enrichment.shop_orders.trackingNumber".')
+    step_key: str | None = Field(default=None, description="For source=step: the connector key.")
+    field: str | None = None
+
+
+class PipelineStepField(BaseModel):
+    target: str
+    label: str | None
+    path: str
+
+
+class PipelineConnectorStep(BaseModel):
+    """One enrichment API call, in the order it runs."""
+
+    position: int = Field(description="1-based order in the pipeline.")
+    connector_id: uuid.UUID
+    key: str
+    name: str
+    description: str | None
+    method: str
+    url_template: str
+    credential_name: str | None
+    credential_kind: str | None
+    required: bool
+    timeout_seconds: float
+    max_retries: int
+    run_when: list[str] = Field(description="Conditions in plain words; empty = every case.")
+    run_when_match: Literal["all", "any"]
+    fields: list[PipelineStepField]
+    uses: list[PipelineDependency]
+    problems: list[str] = Field(description="Setup issues, e.g. uses data from a later step.")
+
+
+class PipelineQueue(BaseModel):
+    id: uuid.UUID
+    name: str
+    priority: int
+    conditions: list[str]
+    match: Literal["all", "any"]
+    ai_drafting: bool
+    ai_model: str | None
+
+
+class PipelineRule(BaseModel):
+    id: uuid.UUID
+    name: str
+    priority: int
+    conditions: list[str]
+    outcome: str
+
+
+class PipelineDefinition(BaseModel):
+    """What every new case goes through, in order, before an agent picks it up."""
+
+    connectors: list[PipelineConnectorStep]
+    inactive_connectors: list[str]
+    queues: list[PipelineQueue]
+    compensation_rules: list[PipelineRule]
+    compensation_guardrails: str
+
+
+StepStatus = Literal["ok", "failed", "skipped", "not_run", "pending"]
+
+
+class ExecutionStep(BaseModel):
+    key: str
+    name: str
+    position: int | None = Field(description="Position in the current pipeline; None = removed.")
+    status: StepStatus
+    error: str | None = None
+    http_status: int | None = None
+    duration_ms: int | None = None
+    request: RequestPreview | None = None
+    data: dict[str, Any] = Field(default_factory=dict)
+    missing: list[str] = Field(default_factory=list)
+    fetched_at: datetime | None = None
+
+
+ExecutionOutcome = Literal["ok", "partial", "failed", "in_progress", "no_enrichment"]
+
+
+class ExecutionSummary(BaseModel):
+    case_number: int
+    created_at: datetime
+    customer_name: str | None
+    customer_email: str
+    category: str
+    case_status: str
+    outcome: ExecutionOutcome
+    steps: list[ExecutionStep] = Field(
+        description="Status per step (details only on the detail view)."
+    )
+    total_duration_ms: int
+    queue_name: str | None
+    compensation_status: str | None
+    compensation_label: str | None
+
+
+class ExecutionRouting(BaseModel):
+    queue_name: str | None
+    matched_conditions: list[str]
+    routed_at: datetime | None
+
+
+class ExecutionDetail(ExecutionSummary):
+    routing: ExecutionRouting
+    compensation: dict[str, Any] | None
+    enriched_at: datetime | None

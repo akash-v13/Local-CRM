@@ -664,3 +664,80 @@ export interface SimulationResult {
   }[];
   no_match_case_numbers: number[];
 }
+
+// ----- intake pipeline -----
+
+export interface PipelineDependency {
+  source: "case" | "step";
+  /** e.g. "enrichment.shop_orders.trackingNumber" */
+  path: string;
+  step_key: string | null;
+  field: string | null;
+}
+
+export interface PipelineConnectorStep {
+  position: number;
+  connector_id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  method: string;
+  url_template: string;
+  credential_name: string | null;
+  credential_kind: string | null;
+  required: boolean;
+  timeout_seconds: number;
+  max_retries: number;
+  run_when: string[];
+  run_when_match: "all" | "any";
+  fields: { target: string; label: string | null; path: string }[];
+  uses: PipelineDependency[];
+  problems: string[];
+}
+
+export interface PipelineDefinition {
+  connectors: PipelineConnectorStep[];
+  inactive_connectors: string[];
+  queues: { id: string; name: string; priority: number; conditions: string[]; match: "all" | "any"; ai_drafting: boolean; ai_model: string | null }[];
+  compensation_rules: { id: string; name: string; priority: number; conditions: string[]; outcome: string }[];
+  compensation_guardrails: string;
+}
+
+export type StepStatus = "ok" | "failed" | "skipped" | "not_run" | "pending";
+export type ExecutionOutcome = "ok" | "partial" | "failed" | "in_progress" | "no_enrichment";
+
+export interface ExecutionStep {
+  key: string;
+  name: string;
+  /** Position in today's pipeline; null = the connector was removed since. */
+  position: number | null;
+  status: StepStatus;
+  error: string | null;
+  http_status: number | null;
+  duration_ms: number | null;
+  request: RequestPreview | null;
+  data: Record<string, unknown>;
+  missing: string[];
+  fetched_at: string | null;
+}
+
+export interface ExecutionSummary {
+  case_number: number;
+  created_at: string;
+  customer_name: string | null;
+  customer_email: string;
+  category: string;
+  case_status: CaseStatus;
+  outcome: ExecutionOutcome;
+  steps: ExecutionStep[];
+  total_duration_ms: number;
+  queue_name: string | null;
+  compensation_status: CompensationStatus | null;
+  compensation_label: string | null;
+}
+
+export interface ExecutionDetail extends ExecutionSummary {
+  routing: { queue_name: string | null; matched_conditions: string[]; routed_at: string | null };
+  compensation: CompensationDecision | null;
+  enriched_at: string | null;
+}

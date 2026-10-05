@@ -44,6 +44,7 @@ app/
 │   ├── replies.py    Prompt templates (save, preview, coverage, costs) + AI drafts on cases
 │   ├── template_tests.py Sample cases + test lab runs (executed by the worker)
 │   ├── compensation.py Compensation rules, decisions on cases, approvals, live test, backtest
+│   ├── pipeline.py   Intake pipeline view: steps + dependencies, and each case's run
 │   └── routing.py    Adapts models to the pure routing logic
 ├── connectors/       Calling external APIs: runner (one request), auth (credentials,
 │                     token cache), context (what templates can see)

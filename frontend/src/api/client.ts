@@ -22,6 +22,10 @@ import type {
   CompensationRuleInput,
   CompensationSettings,
   CostProjection,
+  ExecutionDetail,
+  ExecutionOutcome,
+  ExecutionSummary,
+  PipelineDefinition,
   SimulationResult,
   Message,
   MessageCreateInput,
@@ -179,6 +183,13 @@ export const api = {
     put<Credential>(`/tenants/${tenantId}/credentials/${id}`, input),
   testCredential: (tenantId: string, id: string) =>
     post<TokenTestResult>(`/tenants/${tenantId}/credentials/${id}/test`, {}),
+
+  // Intake pipeline
+  pipeline: (tenantId: string) => request<PipelineDefinition>(`/tenants/${tenantId}/pipeline`),
+  pipelineExecutions: (tenantId: string, outcome?: ExecutionOutcome) =>
+    request<ExecutionSummary[]>(`/tenants/${tenantId}/pipeline/executions${outcome ? `?outcome=${outcome}` : ""}`),
+  pipelineExecution: (tenantId: string, caseNumber: number) =>
+    request<ExecutionDetail>(`/tenants/${tenantId}/pipeline/executions/${caseNumber}`),
 
   // Compensation matrix
   listCompensationRules: (tenantId: string) =>

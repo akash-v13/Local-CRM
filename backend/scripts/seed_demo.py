@@ -6,11 +6,13 @@
 
 Creates "Northwind Outfitters (demo)", a fictional online shop:
 - queues: Priority customers, Delivery issues (+ the default General queue)
-- credentials + connectors to the mock shop/shipping API (docker-compose "mocks")
+- 3 credentials + 3 connectors (shop orders → shipping tracker → loyalty program)
+  calling the mock API (docker-compose "mocks")
 - compensation rules and guardrails
 - a persona template for the Priority customers queue, and test-lab sample cases
 - 7 cases in different states: auto-approved compensation, a repeat claim
-  waiting for approval, no compensation (weather), replies, notes, solved
+  waiting for approval, no compensation (weather), a failed shop lookup,
+  replies, notes, solved
 
 It talks to the API like any client would, so it also works as a smoke test.
 Running it again creates another demo business; nothing is overwritten.
@@ -158,6 +160,38 @@ def seed(api: Api, with_ai: bool) -> None:
             "field_mappings": [
                 {"path": "fault", "target": "fault", "label": "Fault"},
                 {"path": "delayReason", "target": "delayReason", "label": "Delay reason"},
+            ],
+        },
+    )
+    loyalty_token = api.post(
+        f"{t}/credentials",
+        {
+            "name": "Loyalty API token",
+            "kind": "bearer",
+            "secrets": {"token": "demo-loyalty-token"},
+        },
+    )
+    api.post(
+        f"{t}/connectors",
+        {
+            "key": "loyalty",
+            "name": "Loyalty program",
+            "description": "Points, order history and past claims for the customer.",
+            "run_order": 30,
+            "url_template": f"{MOCKS}/loyalty/{{{{case.customer.email}}}}",
+            "credential_id": loyalty_token["id"],
+            "field_mappings": [
+                {"path": "points", "target": "points", "label": "Loyalty points"},
+                {
+                    "path": "ordersLast12Months",
+                    "target": "orders12m",
+                    "label": "Orders (12 months)",
+                },
+                {
+                    "path": "compensationClaimsLast12Months",
+                    "target": "claims12m",
+                    "label": "Claims (12 months)",
+                },
             ],
         },
     )
@@ -353,6 +387,16 @@ def seed(api: Api, with_ai: bool) -> None:
             "Late delivery",
             "NW-10204",
             "Order arrived late but it's here now, just letting you know.",
+        ),
+        # The mock shop answers "500" order numbers with a server error, so this case
+        # shows a failed step (and the shipping step that needed its data being skipped).
+        "shop_error": case(
+            "Sam Lee",
+            "sam.lee@example.com",
+            None,
+            "Late delivery",
+            "NW-500-77",
+            "Where is my order? It's late.",
         ),
     }
 

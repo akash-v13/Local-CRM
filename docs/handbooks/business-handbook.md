@@ -33,7 +33,8 @@ Every screenshot uses a made-up demo shop called *Northwind Outfitters*. Ask who
 
 - [B1. Dashboard](#b1-dashboard)
 - [B2. Queues and routing](#b2-queues-and-routing)
-- [B3. Connectors and credentials](#b3-connectors-and-credentials)
+- [B3. The intake pipeline](#b3-the-intake-pipeline)
+- [B3b. Connectors and credentials](#b3b-connectors-and-credentials)
 - [B4. Compensation rules](#b4-compensation-rules)
 - [B5. How AI replies are written (prompt templates)](#b5-how-ai-replies-are-written-prompt-templates)
 - [B6. Testing AI before you change anything](#b6-testing-ai-before-you-change-anything)
@@ -245,6 +246,7 @@ When a case comes in, the platform looks up data in your systems, such as order 
 - **✓ OK** means the lookup worked.
 - **An error** means a system didn't answer. The case is still routed unless your manager marked that lookup as required.
 - **Re-run enrichment** looks everything up again, e.g. if a system was down.
+- **View the pipeline run** shows the same lookups on the pipeline diagram, step by step ([B3](#b3-the-intake-pipeline)).
 
 ## A8. Creating test cases
 
@@ -303,7 +305,28 @@ Everything in Part B lives under **Operations**. Changes apply to **new** cases.
 
 Queues are **deactivated, never deleted**, so old cases keep their history.
 
-## B3. Connectors and credentials
+## B3. The intake pipeline
+
+**Operations → Pipeline** shows, as a diagram, what every new case goes through before it reaches an agent:
+- your connected systems, in the order they're called (① ② ③…)
+- routing
+- compensation
+
+Click a step to see what it calls, when it runs, what it uses from earlier steps, and what it saves. **"Uses data from ①"** means the step needs a value an earlier step looked up. A ⚠ warns about setups that can't work, e.g. a step that needs data from a step running after it.
+
+![Intake pipeline](images/pipeline.png)
+
+**Executions** (the second tab) lists how each recent case went through the pipeline. Each row has the case number, customer, category, a ✓ / ✗ / ↷ for every step, the queue it landed in, and its compensation. Filter by result to find failures. Click a case to see its run on the diagram, with the data each step returned.
+
+![Executions](images/pipeline-executions.png)
+
+![One case's run, where the shop lookup failed](images/pipeline-execution-failed.png)
+
+In that run, ① failed (the shop's system returned an error), so ② was skipped because it needed ①'s tracking number. ③ still ran, and the case was still routed.
+
+Your technical team adds and changes the systems in the pipeline. Their guide is the [Integration guide](integration-guide.md).
+
+## B3b. Connectors and credentials
 
 A **connector** is a saved lookup into one of your systems, e.g. *get the order for this order number*. Connectors run automatically on every new case, in order, before routing.
 
@@ -494,7 +517,7 @@ Create a rule *Weather delays: no compensation* with the condition *Shipping tra
 |---|---|
 | A case is in the wrong queue. | Use **Move to queue…** on the case (A6). If it keeps happening, fix the queue conditions (B2) and test them with **Test with a real case**. |
 | A case went to General instead of my queue. | No other queue's conditions matched. In the queue editor, **Test with a real case** shows which condition failed and what the case actually had. |
-| Enrichment shows an error. | The other system didn't answer. Try **Re-run enrichment**. If it persists, a manager can test the connector (B3, step 4). |
+| Enrichment shows an error. | The other system didn't answer. Try **Re-run enrichment**. If it persists, check **Pipeline → Executions** for the error and send it to your technical team ([Integration guide §9](integration-guide.md#9-watching-executions-and-troubleshooting)). |
 | "Draft with AI" says AI is turned off. | Tick **Allow AI to draft replies** on the case's queue (B2). |
 | "Draft with AI" says AI isn't set up. | Your installation needs an Anthropic API key. Ask your administrator. |
 | The draft says "Prompt template problem in …". | A template uses data this case doesn't have. Open that template, **Preview** it with this case, and guard the data with `{% if … is defined %}`. |
@@ -520,6 +543,6 @@ Your administrator can load the *Northwind Outfitters* demo shown in this handbo
 - compensation rules
 - a persona template
 - sample cases
-- six cases in different states
+- seven cases in different states, including one where a lookup fails
 
 That makes it a safe place to practise everything above.

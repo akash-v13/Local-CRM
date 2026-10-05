@@ -84,6 +84,19 @@ await shot("case-compensation-none", card("Compensation"));
 await open("/ops", "Open cases");
 await shot("ops-dashboard");
 
+// Intake pipeline: the definition, the executions list, and two runs.
+await open("/ops/pipeline", "Intake pipeline");
+await page.locator(".flow-node").filter({ hasText: "Shipping tracker" }).click();
+await shot("pipeline", page, { fullPage: true });
+await page.getByRole("link", { name: "Executions" }).click();
+await page.getByText("Sam Lee").first().waitFor();
+await shot("pipeline-executions");
+await open(`/ops/pipeline/executions/${maya}`, "Ready for an agent");
+await page.locator(".flow-node").filter({ hasText: "Shop orders" }).first().click();
+await shot("pipeline-execution", page, { fullPage: true });
+await open(`/ops/pipeline/executions/${byName("Sam Lee")}`, "Ready for an agent");
+await shot("pipeline-execution-failed", page, { fullPage: true });
+
 await open("/ops/queues", "Priority customers");
 await shot("queues");
 const delivery = queues.find((q) => q.name === "Delivery issues");

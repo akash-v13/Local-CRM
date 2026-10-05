@@ -13,6 +13,7 @@ from app.api import (
     connectors,
     credentials,
     health,
+    pipeline,
     queues,
     replies,
     reports,
@@ -48,6 +49,7 @@ app.include_router(replies.router)
 app.include_router(replies.models_router)
 app.include_router(compensation.router)
 app.include_router(compensation.case_router)
+app.include_router(pipeline.router)
 
 
 # Map domain errors (raised by services) to HTTP responses in one place.
