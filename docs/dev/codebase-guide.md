@@ -207,8 +207,9 @@ flowchart LR
 |---|---|---|
 | Template engine | `app/ai/engine.py` | Names and fallback chains, `{#--- ---#}` header (description + checks), validation (syntax, no include/extends/import, only known variables), sandboxed `StrictUndefined` rendering, `build_prompt`. Business templates can't touch the platform layers: the engine combines layers itself. |
 | Context | `app/ai/context.py` | `DraftInput` → the masked dict templates see (`business`, `case`, `customer`, `enrichment`, `decisions`, `thread`, `latest_message`). |
-| Starter pack | `app/ai/templates/defaults/` | Copied into each business's database on first use (`ensure_defaults`). |
+| Starter pack | `app/ai/templates/defaults/` | Copied into each business's database on first use (`ensure_defaults`). When the starter pack changes, templates nobody has edited get the new content as a new version; edited templates are never touched. |
 | Models & prices | `app/ai/models.py` | Haiku 4.5, Sonnet 5 (default), Opus 5. **Every cost in the app comes from this table.** Haiku has no `effort`; Opus gets server-side refusal fallback. |
+| Checks & warnings | `app/ai/checks.py` | Template checks (max words, must / must-not phrases, merged across layers) and consistency between repeated drafts. **Warnings** for an agent: timeframes that aren't in the case facts, offers of refunds/replacements nobody decided, and refund requests the model didn't flag. |
 | Masking | `app/ai/pii.py` | Known name/email plus email, phone (9-15 digits, not dates) and card patterns → placeholders, restored after. `unexpected_pii` flags contact details the model invented. |
 | Model call | `app/ai/drafter.py` | `client.beta.messages.parse(output_format=DraftOutput)`, two system blocks (first cached), typed errors → readable messages. `DraftWriter` is the seam tests replace with a fake. |
 | Templates service | `services/replies.py` `PromptTemplateService` | Save (validated; source/check change → immutable new version), import/export `.jinja`, preview (no model call), coverage per queue and category, cost projection. |

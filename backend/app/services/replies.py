@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.ai.checks import run_checks
+from app.ai.checks import run_checks, unsupported_commitments
 from app.ai.context import DraftInput, build_context
 from app.ai.drafter import DraftError, DraftWriter
 from app.ai.engine import (
@@ -68,6 +68,9 @@ from app.schemas import (
     TemplateVariable,
 )
 from app.services.routing import enrichment_data
+
+# `created_by` of versions written by the starter pack (not a person).
+STARTER = "starter pack"
 
 # Typical size of the per-case user message, for estimates before anything has run.
 TYPICAL_CASE_PROMPT_TOKENS = 700
@@ -215,6 +218,13 @@ def generate_draft(
     ]
     for item in unexpected_pii(reply, sources):
         warnings.append(f"The draft contains a {item} that isn't in the case. Check it.")
+    warnings += unsupported_commitments(
+        reply,
+        prompt.system_layers + "\n" + prompt.user,
+        compensation=draft_input.compensation,
+        flagged=result.output.needs_human_attention,
+        customer_text=" ".join(text for who, text in draft_input.thread if who == "customer"),
+    )
 
     checks = run_checks(
         reply,
@@ -289,34 +299,53 @@ class PromptTemplateService:
         return tenant
 
     def ensure_defaults(self, tenant_id: uuid.UUID, *, commit: bool = True) -> None:
-        """Add any starter template the tenant doesn't have (never overwrites edits)."""
-        existing = set(
-            self.session.scalars(
-                select(PromptTemplate.name).where(PromptTemplate.tenant_id == tenant_id)
+        """Keep the tenant's starter templates current, never touching anyone's edits:
+        - add any starter template the tenant doesn't have;
+        - if a template is still exactly as the starter pack wrote it (current version
+          created by "starter pack") and the starter has changed, add the new starter
+          content as a new version. Edited templates are never changed.
+        """
+        templates = {
+            t.name: t
+            for t in self.session.scalars(
+                select(PromptTemplate).where(PromptTemplate.tenant_id == tenant_id)
             ).all()
-        )
+        }
         added = False
         for name, file in default_files().items():
-            if name in existing:
-                continue
-            template = PromptTemplate(
-                tenant_id=tenant_id,
-                name=name,
-                kind=kind_of(name),
-                description=file.description,
-                current_version=1,
-            )
-            self.session.add(template)
-            self.session.flush()
+            template = templates.get(name)
+            if template is None:
+                template = PromptTemplate(
+                    tenant_id=tenant_id,
+                    name=name,
+                    kind=kind_of(name),
+                    description=file.description,
+                    current_version=0,
+                )
+                self.session.add(template)
+                self.session.flush()
+            else:
+                current = self.current(template)
+                unchanged = (
+                    current.source == file.source
+                    and current.max_words == file.checks.max_words
+                    and list(current.must_include) == file.checks.must_include
+                    and list(current.must_not_include) == file.checks.must_not_include
+                )
+                if current.created_by != STARTER or unchanged:
+                    continue
+            template.current_version += 1
+            template.description = file.description
+            template.updated_at = utcnow()
             self.session.add(
                 PromptTemplateVersion(
                     template_id=template.id,
-                    version=1,
+                    version=template.current_version,
                     source=file.source,
                     max_words=file.checks.max_words,
                     must_include=file.checks.must_include,
                     must_not_include=file.checks.must_not_include,
-                    created_by="starter pack",
+                    created_by=STARTER,
                 )
             )
             added = True

@@ -22,7 +22,10 @@ from tests.test_cases_api import CASE_PAYLOAD
 class FakeWriter:
     """Returns a canned draft and records every prompt it was given."""
 
-    reply: str = "Hi [CUSTOMER_FIRST_NAME], we're sorry your parcel was late. We're on it."
+    reply: str = (
+        "Hi [CUSTOMER_FIRST_NAME], we're sorry your parcel was late. We're on it.\n\n"
+        "Best regards,\nThe Acme Store team"
+    )
     fail_models: set[str] = field(default_factory=set)
     calls: list[dict[str, str]] = field(default_factory=list)
 
@@ -110,6 +113,35 @@ def test_new_tenant_gets_the_starter_pack(client: TestClient, tenant_id: str) ->
     )
     assert late["current"]["must_include"] == ["sorry"]
     assert templates["base.jinja"]["kind"] == "base"
+
+
+def test_starter_updates_reach_unedited_templates_only(
+    client: TestClient, tenant_id: str, session_factory: sessionmaker[Session]
+) -> None:
+    from sqlalchemy import update
+
+    from app.models import PromptTemplateVersion
+
+    persona = "queue/_default.jinja"
+    client.put(templates_url(tenant_id, LATE), json=TEMPLATE)  # a person edits this one (v2)
+    # Pretend both were written by an older starter pack.
+    with session_factory() as session:
+        session.execute(
+            update(PromptTemplateVersion)
+            .where(PromptTemplateVersion.version == 1)
+            .values(source="Old starter text.")
+        )
+        session.commit()
+
+    templates = {t["name"]: t for t in client.get(templates_url(tenant_id)).json()}
+    updated = templates[persona]
+    assert (updated["current_version"], updated["is_default_content"]) == (2, True)
+    assert updated["versions"][1]["source"] == "Old starter text."  # history kept
+    edited = templates[LATE]
+    assert edited["current_version"] == 2 and edited["current"]["source"].startswith("Apologise")
+    # Nothing changes on the next load.
+    again = client.get(templates_url(tenant_id, persona)).json()
+    assert again["current_version"] == 2
 
 
 def test_saving_creates_versions_only_when_something_changed(
@@ -331,6 +363,15 @@ def test_invented_contact_details_are_warned_about(
     warnings = draft(client, tenant_id, case).json()["ai"]["warnings"]
     assert any("refunds@shop-help.com" in w for w in warnings)
     assert any("[ORDER_ID]" in w for w in warnings)
+
+
+def test_invented_timeline_is_warned_about(
+    client: TestClient, tenant_id: str, writer: FakeWriter
+) -> None:
+    enable_ai_on_general(client, tenant_id)
+    writer.reply = "Sorry! We'll get back to you within 2 business days."
+    warnings = draft(client, tenant_id, new_case(client, tenant_id)).json()["ai"]["warnings"]
+    assert any("within 2 business days" in w for w in warnings)
 
 
 def test_model_failures_are_explained(

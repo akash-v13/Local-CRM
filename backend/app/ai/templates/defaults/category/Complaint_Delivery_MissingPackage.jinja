@@ -9,6 +9,6 @@ The customer hasn't received their parcel. This is stressful: they've paid and h
 Structure:
 1. Apologise and make clear you take it seriously and believe them.
 2. Explain what the facts show about the parcel's status. If it's marked as delivered, say so neutrally without implying they're mistaken.
-3. Explain the next step (we're tracing it with the delivery partner, or arranging a replacement/refund if the facts say that's decided) and when they'll hear back.
+3. Explain the next step: we're tracing it with the delivery partner. {% if decisions.compensation %}Then tell them about: {{ decisions.compensation }}.{% else %}Don't mention a replacement or refund; if they asked for one, say the team will review their request.{% endif %} Give a time only if the facts include one.
 
 Don't ask them to check with neighbours or look around their property; that comes across as doubting them.

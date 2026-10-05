@@ -530,6 +530,7 @@ export interface ModelSummary {
   checks_passed_pct: number | null;
   consistency: number | null;
   needs_attention: number;
+  with_warnings: number;
   avg_words: number | null;
   avg_cost_usd: number | null;
   avg_latency_ms: number | null;

@@ -108,6 +108,7 @@ def summarize(results: list[TestResult], models: list[str]) -> list[ModelSummary
                 ),
                 consistency=mean(scores) if scores else None,
                 needs_attention=sum(1 for d in drafts if d.needs_attention),
+                with_warnings=sum(1 for d in drafts if d.warnings),
                 avg_words=mean(word_count(d.reply) for d in drafts) if drafts else None,
                 avg_cost_usd=mean(d.cost_usd for d in drafts) if drafts else None,
                 avg_latency_ms=mean(d.latency_ms for d in drafts) if drafts else None,

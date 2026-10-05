@@ -838,6 +838,9 @@ class ModelSummary(BaseModel):
         description="Mean similarity of repeated drafts for the same input (0-1)."
     )
     needs_attention: int
+    with_warnings: int = Field(
+        default=0, description="Drafts with a warning (invented timeframe, undecided offer, …)."
+    )
     avg_words: float | None
     avg_cost_usd: float | None
     avg_latency_ms: float | None
