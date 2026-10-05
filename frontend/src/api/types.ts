@@ -83,7 +83,7 @@ export interface Case {
   sla: Record<string, unknown>;
   /** Per connector key: what happened the last time it ran for this case. */
   enrichment: Record<string, EnrichmentResult>;
-  decisions: Record<string, unknown>;
+  decisions: { compensation?: CompensationDecision } & Record<string, unknown>;
   queue_id: string | null;
   queue: QueueSummary | null;
   assignee_type: string | null;
@@ -569,4 +569,98 @@ export interface CostProjection {
   monthly_volume: number;
   rows: CostProjectionRow[];
   notes: string[];
+}
+
+// ----- compensation matrix -----
+
+export type CompensationType = "refund" | "store_credit" | "voucher" | "replacement" | "points" | "none";
+
+export interface CompensationOutcome {
+  type: CompensationType;
+  amount_mode: "fixed" | "percent";
+  amount: number | null;
+  percent: number | null;
+  /** Numeric case field, e.g. enrichment.shop_orders.orderTotal */
+  percent_of: string | null;
+  cap: number | null;
+  /** 3-letter code; null = the business's default currency. */
+  currency: string | null;
+  requires_approval: boolean;
+}
+
+export interface CompensationRuleInput {
+  name: string;
+  description: string | null;
+  priority: number;
+  is_active: boolean;
+  match_criteria: MatchCriteria;
+  outcome: CompensationOutcome;
+}
+
+export interface CompensationRule extends CompensationRuleInput {
+  id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompensationSettings {
+  repeat_lookback_days: number;
+  repeat_max_count: number;
+  currency: string;
+}
+
+export type CompensationStatus = "approved" | "pending_approval" | "rejected" | "no_compensation" | "no_match";
+
+/** Stored on the case as decisions.compensation. */
+export interface CompensationDecision {
+  status: CompensationStatus;
+  rule_id: string | null;
+  rule_name: string | null;
+  type: CompensationType | null;
+  amount: number | null;
+  currency: string;
+  label: string | null;
+  amount_explanation: string;
+  approval_reasons: string[];
+  matched_conditions: string[];
+  history: { case_number: number; decided_at: string; type: string; amount: number | null }[];
+  decided_at: string;
+  decided_by: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+}
+
+export interface RuleEvaluation {
+  rule_id: string | null;
+  rule_name: string;
+  priority: number;
+  matched: boolean;
+  is_winner: boolean;
+  is_draft: boolean;
+  conditions: ConditionResult[];
+}
+
+export interface CompensationPreview {
+  decision: CompensationDecision;
+  evaluations: RuleEvaluation[];
+}
+
+export interface SimulationResult {
+  days: number;
+  cases_checked: number;
+  cases_matched: number;
+  needs_approval: number;
+  total_amount: number;
+  currency: string;
+  rows: {
+    rule_id: string | null;
+    rule_name: string;
+    is_draft: boolean;
+    cases: number;
+    needs_approval: number;
+    total_amount: number;
+    example_case_numbers: number[];
+  }[];
+  no_match_case_numbers: number[];
 }

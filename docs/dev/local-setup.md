@@ -156,6 +156,14 @@ docker-compose runs a fake shop/shipping API at `http://mocks:8100` (docs: http:
 
 Failure testing: order numbers containing `404`, `500` or `SLOW` make the mock API fail or time out.
 
+### Try the compensation matrix
+
+1. **Operations → Compensation → New rule**: e.g. *Late delivery: 25% refund*, condition *Category is Delivery*, **Refund**, **Percentage of a case value**: 25% of the case attribute `orderTotal`, cap 50.
+2. Pick a case in **Test with a real case** to see what it would get and why, and run the **backtest** to see what the rule would have cost on recent cases. Then **Create rule**.
+3. Submit the test webform (or `POST /cases` with `"attributes": {"orderTotal": 120}`). When the case is routed, the matrix decides: the case page's **Compensation** card shows *Refund of USD 30.00 · Approved*.
+4. Submit a second case with the same email: it's a **repeat claim**, so it waits for approval. Approve or reject it on the case page.
+5. With AI drafting on, a draft for the first case mentions the refund; the second case's draft won't until it's approved.
+
 ### Try AI reply drafting
 
 First add your Anthropic API key: see [Turn on AI drafting](#turn-on-ai-drafting-anthropic-api-key) above. Then:
