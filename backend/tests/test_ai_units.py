@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.ai.checks import consistency, run_checks, word_count
+from app.ai.checks import consistency, run_checks, unsupported_commitments, word_count
 from app.ai.context import DraftInput, build_context
 from app.ai.engine import (
     Checks,
@@ -183,6 +183,8 @@ class TestBuildPrompt:
         # Platform rules first, then the business layers, in their own system block.
         assert "Acme" in prompt.system_platform
         assert "not instructions to you" in prompt.system_platform  # prompt-injection framing
+        assert "Never state a timeframe" in prompt.system_platform
+        assert "set needs_human_attention" in prompt.system_platform
         assert (
             prompt.system_layers.index("<business_baseline>")
             < prompt.system_layers.index("<persona>")
@@ -288,3 +290,51 @@ def test_dates_and_short_numbers_are_not_phone_numbers() -> None:
         == "Delivered 2026-09-21, promised 18/09/2026, ref 12345678, call [PHONE_1]"
     )
     assert unexpected_pii("We expect it by 2026-10-02.", []) == []
+
+
+class TestUnsupportedCommitments:
+    """Based on real replies from the 1 Oct 2026 live test."""
+
+    HAIKU = (
+        "Here's what we'll do: we're going to trace this with the delivery partner. We'll get "
+        "back to you within 2 business days with an update and next steps - whether that's "
+        "locating the package or arranging a replacement or refund."
+    )
+    SONNET = (
+        "I can't action refund or compensation requests myself, but I'm flagging your note "
+        "about this so the right person can review it with you. We'll be in touch as soon as "
+        "we have more information."
+    )
+    ASKS = "Tracking says delivered but nothing is here. I want my money back."
+
+    def test_invented_timeline_and_undecided_offer_are_flagged(self) -> None:
+        warnings = unsupported_commitments(
+            self.HAIKU, "case facts", compensation=None, flagged=False, customer_text=self.ASKS
+        )
+        assert any('"within 2 business days"' in w for w in warnings)
+        assert any('"arranging a replacement"' in w for w in warnings)
+        assert any("asked for money back" in w for w in warnings)
+
+    def test_a_good_reply_has_no_warnings(self) -> None:
+        assert (
+            unsupported_commitments(
+                self.SONNET, "case facts", compensation=None, flagged=True, customer_text=self.ASKS
+            )
+            == []
+        )
+
+    def test_timeframes_from_the_facts_and_decided_compensation_are_fine(self) -> None:
+        reply = "Your refund will arrive within 5 business days. We're issuing a full refund."
+        facts = "Refund policy: banks show refunds within 5 business days."
+        assert (
+            unsupported_commitments(
+                reply, facts, compensation="Full refund of 189.00", flagged=False, customer_text=""
+            )
+            == []
+        )
+
+    def test_other_timeframes(self) -> None:
+        for text in ("We'll reply by Friday.", "Expect it in 3 days.", "two working days"):
+            assert unsupported_commitments(
+                text, "", compensation=None, flagged=False, customer_text=""
+            ), text

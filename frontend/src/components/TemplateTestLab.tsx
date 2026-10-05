@@ -197,6 +197,7 @@ export function TemplateTestLab({ tenantId, agentId, models, buildTemplate, onRu
                   <th className="num">Checks passed</th>
                   <th className="num">Consistency</th>
                   <th className="num">Needs attention</th>
+                  <th className="num">With warnings</th>
                   <th className="num">Avg words</th>
                   <th className="num">Avg time</th>
                   <th className="num">Cost / reply</th>
@@ -210,6 +211,7 @@ export function TemplateTestLab({ tenantId, agentId, models, buildTemplate, onRu
                     <td className="num">{formatPct(s.checks_passed_pct)}</td>
                     <td className="num">{s.consistency === null ? "—" : formatPct(s.consistency * 100)}</td>
                     <td className="num">{s.needs_attention}</td>
+                    <td className="num">{s.with_warnings}</td>
                     <td className="num">{s.avg_words === null ? "—" : Math.round(s.avg_words)}</td>
                     <td className="num">{s.avg_latency_ms === null ? "—" : `${(s.avg_latency_ms / 1000).toFixed(1)}s`}</td>
                     <td className="num strong">{formatUsd(s.avg_cost_usd)}</td>
@@ -244,6 +246,9 @@ export function TemplateTestLab({ tenantId, agentId, models, buildTemplate, onRu
                             {r.draft.needs_attention && <p className="draft-alert small">⚠ {r.draft.attention_reason}</p>}
                             <p className="message-body">{r.draft.reply}</p>
                             <CheckBadges checks={r.draft.checks} />
+                            {r.draft.warnings.map((w, i) => (
+                              <p key={i} className="draft-alert small"><span aria-hidden>⚠ </span>{w}</p>
+                            ))}
                           </>
                         ) : (
                           <p className="error small">{r.error}</p>

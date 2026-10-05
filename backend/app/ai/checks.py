@@ -66,3 +66,52 @@ def consistency(replies: list[str]) -> float | None:
         for j in range(i + 1, len(tokens))
     ]
     return sum(scores) / len(scores)
+
+
+# ----- warnings: commitments the case facts don't support -----------------------------------
+# These don't fail a template check; they're shown to the agent (and counted in the test
+# lab) because they're the mistakes that cost money or trust: promising a timeline nobody
+# agreed to, or offering compensation nobody decided.
+
+_NUMBER = r"(?:\d+|one|two|three|four|five|seven|ten|a few|a couple of)"
+_UNIT = r"(?:business\s+|working\s+)?(?:hours?|days?|weeks?)"
+_TIMEFRAME = re.compile(
+    rf"\b(?:within|in the next|in)\s+{_NUMBER}\s+{_UNIT}\b"
+    rf"|\b{_NUMBER}\s+(?:business|working)\s+days?\b"
+    r"|\bby\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow"
+    r"|tonight|the end of (?:the )?(?:day|week)|end of (?:the )?(?:day|week))\b",
+    re.IGNORECASE,
+)
+_OFFER = re.compile(
+    r"\b(?:arrang\w*|issu\w*|send\w*|offer\w*|process\w*|give|giving|provid\w*|refund you)\b"
+    r"(?:\s+\w+){0,3}?\s+(?:a\s+|an\s+|your\s+|the\s+)?(?:full\s+|partial\s+)?"
+    r"(?:refund|replacement|voucher|credit|discount|compensation|reimbursement)\b",
+    re.IGNORECASE,
+)
+_ASKS_FOR_MONEY = re.compile(
+    r"\b(?:refund|money back|compensat\w*|reimburs\w*|replacement|chargeback)\b", re.IGNORECASE
+)
+
+
+def unsupported_commitments(
+    reply: str, facts: str, *, compensation: str | None, flagged: bool, customer_text: str
+) -> list[str]:
+    """Warnings for timelines and offers the facts don't support.
+
+    `facts` is everything the model was given (case facts + conversation); a timeframe
+    that appears there (e.g. a delivery promise from the order data) is fine.
+    """
+    warnings: list[str] = []
+    lowered_facts = facts.lower()
+    for match in dict.fromkeys(m.group(0) for m in _TIMEFRAME.finditer(reply)):
+        if match.lower() not in lowered_facts:
+            warnings.append(f'Promises a timeframe that isn\'t in the case: "{match}". Check it.')
+    if not compensation:
+        for match in dict.fromkeys(m.group(0) for m in _OFFER.finditer(reply)):
+            warnings.append(f'Offers something no rule has decided: "{match}". Check it.')
+        if not flagged and _ASKS_FOR_MONEY.search(customer_text):
+            warnings.append(
+                "The customer asked for money back or compensation and none is decided: "
+                "an agent should review this request."
+            )
+    return warnings

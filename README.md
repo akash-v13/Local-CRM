@@ -108,8 +108,15 @@ A typical draft with the starter templates uses about **2,000 input tokens and 3
 | Missing-parcel sample, 2 runs | Sonnet 5 | $0.0075 | 4.4s | Passed every check, flagged the refund demand both times |
 | Missing-parcel sample, 2 runs | Haiku 4.5 | $0.0026 | 5.3s | Passed the automated checks, but invented a "2 business days" timeline and hinted at a refund |
 
+**After tightening the rules (5 Oct 2026):** a platform rule against unsupported timeframes, an escalation rule for refund requests, reworded starter templates, and automatic warnings for invented timeframes and undecided offers.
+
+| Test | Model | Cost per reply | Result |
+|---|---|---|---|
+| Missing-parcel sample, 2 runs | Haiku 4.5 | $0.0026 | No warnings, both flagged the refund request for an agent. One draft dropped the sign-off (now a check). |
+| Missing-parcel sample, 2 runs | Sonnet 5 | $0.0076 | No warnings, both flagged the refund request, more consistent wording |
+
 Notes:
-- **Sonnet 5 is the default.** Haiku is about 3× cheaper but followed the rules less reliably in testing. Compare models on your own cases in a template's **test lab** before switching a queue.
+- **Sonnet 5 is the default.** Haiku is about 3× cheaper. After the rule changes it behaved correctly in testing, but its wording varies more between runs. Compare models on your own cases in a template's **test lab** before switching a queue.
 - The in-app **cost projection** uses measured usage once drafts or test runs exist. Before that it's an estimate, which ran about 30% low in testing.
 - Prompt caching is set up but isn't reducing costs yet: the cached part of the prompt is probably below the minimum cacheable length.
 - A test-lab run shows its estimated cost before you start it. The run above (4 drafts) cost $0.02.
