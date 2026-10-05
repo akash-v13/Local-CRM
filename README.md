@@ -1,6 +1,6 @@
 # Local CRM
 
-A customer care **resolution engine**. It takes in customer cases, enriches them with data from the business's own systems, routes each one to the right queue, and drafts replies with AI for an agent to review. A configurable compensation matrix comes next.
+A customer care **resolution engine**. It takes in customer cases, enriches them with data from the business's own systems, routes each one to the right queue, decides compensation with rules the business configures, and drafts replies with AI for an agent to review.
 
 This README is the **one place to start**. It explains what the product does and how it's built, and links to the detailed guide for each part. Each folder's own README goes deeper, but you shouldn't need to hunt through them.
 
@@ -30,7 +30,8 @@ Early, but working end to end on a laptop.
 | Operations Portal: dashboard, queues, connectors, credentials, prompt templates, sample cases | ✅ Built |
 | Enrichment: connectors to any HTTP API, shared credentials (API key, bearer, basic, OAuth 2.0, generated tokens), background worker | ✅ Built |
 | AI reply drafting: layered Jinja prompt templates, PII masking, test lab across Claude models, cost projections | ✅ Built (needs an Anthropic API key) |
-| Compensation matrix and payouts | ⏭️ Next |
+| Compensation matrix: rules, guardrails (approval threshold, repeat claims), approvals, backtest | ✅ Built |
+| Payouts (actually issuing compensation) | ⏭️ Next |
 | Real email / channel connectors, SLA timers, approvals, AI auto-send, sign-in | 🗓️ Planned |
 
 ---
@@ -121,8 +122,12 @@ Notes:
 - Prompt caching is set up but isn't reducing costs yet: the cached part of the prompt is probably below the minimum cacheable length.
 - A test-lab run shows its estimated cost before you start it. The run above (4 drafts) cost $0.02.
 
+### Compensation matrix
+Each business writes its own rules for what a customer gets: a refund, credit, voucher, replacement, points, or nothing. They're checked in priority order and the first match decides. The amount is fixed or a percentage of a case value (e.g. 25% of the order total), with an optional cap. A decision goes to a person for approval when the rule says so, the amount is above the queue's threshold, or the customer was compensated recently. The **backtest** shows what the rules would have decided and cost on recent cases before you switch them on. AI drafts only mention compensation once it's approved.
+→ [Codebase guide §12](docs/dev/codebase-guide.md#12-compensation-matrix)
+
 ### Operations Portal
-This is for managers. It has a dashboard (open cases, a queue × status table) and the editors for queues, connectors, credentials, prompt templates and sample cases.
+This is for managers. It has a dashboard (open cases, a queue × status table) and the editors for queues, connectors, credentials, compensation rules, prompt templates and sample cases.
 
 ---
 
@@ -210,7 +215,7 @@ CI runs all of these on every pull request. To add a feature, follow the worked 
 |---|---|---|
 | **This README** | Everyone | What it is, how it works, where everything is |
 | [docs/dev/local-setup.md](docs/dev/local-setup.md) | Anyone running it | Docker and non-Docker setup, walkthroughs, AI key, troubleshooting |
-| [docs/dev/codebase-guide.md](docs/dev/codebase-guide.md) | Developers | Layers, request walkthrough, conventions, routing / enrichment / AI internals, full API endpoint list |
+| [docs/dev/codebase-guide.md](docs/dev/codebase-guide.md) | Developers | Layers, request walkthrough, conventions, routing / enrichment / AI / compensation internals, full API endpoint list |
 | [docs/dev/database-guide.md](docs/dev/database-guide.md) | Developers | Tables today, columns vs JSON, migrations, transactions, locking (written for document-database developers) |
 | [backend/README.md](backend/README.md) | Backend developers | Commands and a map of every backend folder |
 | [frontend/README.md](frontend/README.md) | Frontend developers | Routes, components, conventions, tests |
@@ -225,7 +230,7 @@ CI runs all of these on every pull request. To add a feature, follow the worked 
 
 ## 8. Principles
 
-1. **The AI never decides anything that matters.** Eligibility and compensation come from rules the business configures. The model only writes the reply.
+1. **The AI never decides anything that matters.** Compensation comes from rules the business configures (the compensation matrix), and the AI only mentions it once it's approved. The model only writes the reply.
 2. **A human reviews every draft** until a queue explicitly allows otherwise.
 3. **The model never sees raw personal data.** It's masked before the prompt is built and restored afterwards.
 4. **Everything is auditable.** Every status change, reroute, enrichment and draft is recorded with who did it and why.

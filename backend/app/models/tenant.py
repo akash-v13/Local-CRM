@@ -1,7 +1,9 @@
+from typing import Any
+
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, CreatedAtMixin, IdMixin
+from app.models.base import Base, CreatedAtMixin, IdMixin, JSONType
 
 
 class Tenant(IdMixin, CreatedAtMixin, Base):
@@ -10,3 +12,6 @@ class Tenant(IdMixin, CreatedAtMixin, Base):
     __tablename__ = "tenants"
 
     name: Mapped[str] = mapped_column(String(200))
+    # Compensation guardrails (repeat-claimant check, default currency); see
+    # app/domain/compensation.py `Settings`. Empty = defaults.
+    compensation_settings: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)

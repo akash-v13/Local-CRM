@@ -28,6 +28,18 @@ function describe(event: CaseEvent): string {
       return "Enrichment error";
     case "case.rerouted":
       return `Moved from ${String(event.data.fromQueueName ?? "no queue")} to ${String(event.data.toQueueName)}`;
+    case "compensation.decided": {
+      const status = String(event.data.status);
+      const what = event.data.label ? String(event.data.label) : "No compensation";
+      if (status === "no_match") return "Compensation: no rule matched";
+      return status === "pending_approval" ? `Compensation proposed: ${what} (needs approval)` : `Compensation decided: ${what}`;
+    }
+    case "compensation.approved":
+      return `Compensation approved: ${String(event.data.label ?? "")}`;
+    case "compensation.rejected":
+      return `Compensation rejected: ${String(event.data.label ?? "")}`;
+    case "ai.draft_created":
+      return "AI draft written";
     default:
       return event.event_type;
   }
@@ -36,7 +48,7 @@ function describe(event: CaseEvent): string {
 /** Why a case was routed where it was: the conditions of the winning queue. */
 function MatchedConditions({ data }: { data: Record<string, unknown> }) {
   const matched = Array.isArray(data.matchedConditions) ? (data.matchedConditions as string[]) : [];
-  if (matched.length === 0) return <div className="timeline-meta">Catch-all queue (no conditions)</div>;
+  if (matched.length === 0) return <div className="timeline-meta">Catch-all (no conditions)</div>;
   return (
     <ul className="timeline-conditions">
       {matched.map((m) => (
@@ -78,7 +90,9 @@ export function EventTimeline({ events }: { events: CaseEvent[] }) {
             {e.actor_id ?? e.actor_type} · {formatDateTime(e.occurred_at)}
           </div>
           {e.reason && <div className="timeline-reason">“{e.reason}”</div>}
-          {e.event_type === "case.routed" && <MatchedConditions data={e.data} />}
+          {(e.event_type === "case.routed" || e.event_type === "compensation.decided") && e.data.ruleName !== null && (
+            <MatchedConditions data={e.data} />
+          )}
           {e.event_type === "enrichment.completed" && <ConnectorOutcomes data={e.data} />}
         </li>
       ))}

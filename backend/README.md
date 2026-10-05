@@ -41,6 +41,7 @@ app/
 │   ├── enrichment.py Runs connectors for a case (called by the worker), then routes
 │   ├── replies.py    Prompt templates (save, preview, coverage, costs) + AI drafts on cases
 │   ├── template_tests.py Sample cases + test lab runs (executed by the worker)
+│   ├── compensation.py Compensation rules, decisions on cases, approvals, live test, backtest
 │   └── routing.py    Adapts models to the pure routing logic
 ├── connectors/       Calling external APIs: runner (one request), auth (credentials,
 │                     token cache), context (what templates can see)
@@ -58,6 +59,7 @@ app/
 ├── domain/           Pure business rules — no DB, no HTTP
 │   ├── lifecycle.py  Statuses and allowed transitions
 │   ├── routing.py    Queue matching (decision list + specifications)
+│   ├── compensation.py Compensation decisions (first matching rule + guardrails)
 │   ├── taxonomy.py   Case categories for the webform
 │   ├── templates.py  {{placeholder}} rendering with safe escaping
 │   ├── jsonpath.py   Read values from JSON by dotted path

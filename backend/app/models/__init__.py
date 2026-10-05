@@ -8,6 +8,7 @@ invisible to migrations.
 from app.models.base import Base
 from app.models.case import Case
 from app.models.case_event import CaseEvent
+from app.models.compensation_rule import CompensationRule
 from app.models.connector import Connector
 from app.models.credential import Credential
 from app.models.customer import Customer
@@ -26,6 +27,7 @@ __all__ = [
     "Base",
     "Case",
     "CaseEvent",
+    "CompensationRule",
     "Connector",
     "Credential",
     "Customer",
