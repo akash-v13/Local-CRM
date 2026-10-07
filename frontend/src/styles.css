@@ -1659,6 +1659,17 @@ details.card[open] > summary {
   align-items: center;
   margin: 0.25rem 0 0.75rem;
 }
+.field-key {
+  font-weight: normal;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+.shopify-steps {
+  margin-bottom: 0.75rem;
+}
+.shopify-steps ol ul {
+  margin: 0.25rem 0;
+}
 .payouts-header {
   display: flex;
   justify-content: space-between;

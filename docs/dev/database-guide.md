@@ -6,7 +6,7 @@ Written for someone who knows DocumentDB/MongoDB and is new to Postgres, SQLAlch
 
 | Table | Holds | Notes |
 |---|---|---|
-| `tenants` | Businesses using the platform | Every other table has a `tenant_id` |
+| `tenants` | Businesses using the platform, with their settings as JSON (`compensation_settings`, `reading_settings`, `payout_settings`, `shopify_settings`) | Every other table has a `tenant_id` |
 | `customers` | People who contact a business | Unique per tenant by email |
 | `queues` | Where cases wait: priority, match rules, handling settings (incl. AI model) | Deactivated, never deleted |
 | `cases` | The case: status, queue, category, `attributes`, `enrichment`, `decisions` (compensation), `extraction` (what was read from the message), `mailbox_id` (email cases) | Public **case number** (Unix µs); optimistic locking via `version` |

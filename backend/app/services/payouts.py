@@ -1,6 +1,6 @@
-"""Issuing approved compensation through the business's payment provider (Stripe).
+"""Issuing approved compensation through the business's Stripe account or Shopify store.
 
-    compensation approved ──► payout queued ──► issue_payout job ──► Stripe ──► case updated
+    compensation approved ──► payout queued ──► issue_payout job ──► Stripe / Shopify ──► case
 
 - A payout is queued when a compensation decision becomes **approved** (automatically,
   or when someone approves it) and the business has payouts on with `auto_pay`; or
@@ -10,7 +10,15 @@
   an in-flight request is replayed, not repeated.
 - Methods: `stripe_refund` (back to the card the order was paid with), `stripe_credit`
   (customer balance for future invoices), `stripe_voucher` (single-use promotion code);
+  `shopify_refund` (refund on the Shopify order, to its original payment), `shopify_credit`
+  (the customer's Shopify store credit), `shopify_discount` (single-use discount code);
   `manual` types are left for a person.
+- Shopify: refunds carry Shopify's mandatory idempotency key and a note naming the
+  payout, so after an unclear error we find our own refund before trying again.
+  Discount codes are unique per store, so a retry finds the code it made. Store credit
+  has no idempotency key: it's never retried automatically when the outcome is unknown,
+  and asks a person to check Shopify first. Refunds and store credit also require the
+  order's email to match the customer's (someone could quote another person's order).
 - The worker calls Stripe with no database session open. Network errors, 429s and
   5xx retry with backoff; other Stripe errors fail at once with Stripe's message.
   A failed payout can be retried from the case after fixing the cause (e.g. the
@@ -30,6 +38,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.connectors.auth import load_secrets
+from app.connectors.runner_settings import RunSettings
 from app.domain.errors import ConflictError, NotFoundError
 from app.models import Case, CaseEvent, Credential, Job, Payout, Tenant
 from app.models.base import utcnow
@@ -37,8 +46,14 @@ from app.payouts.stripe import StripeClient, StripeError, to_minor
 from app.repositories import CaseRepository, MessageRepository, TenantRepository
 from app.schemas import PayoutListRow, PayoutRead, PayoutSettingsData, StripeCheckResult
 from app.services.routing import case_context
+from app.services.shopify import STEP_KEY as SHOPIFY_KEY
+from app.services.shopify import client_for as shopify_client_for
+from app.services.shopify import lookup_order, shopify_step
+from app.shopify.client import ShopifyClient, ShopifyError
 
 PAYOUT_ATTEMPTS = 5
+VOUCHER_METHODS = ("stripe_voucher", "shopify_discount")
+REFUND_METHODS = ("stripe_refund", "shopify_refund")
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I: easy to read out
 
 
@@ -114,7 +129,7 @@ def queue_payout(
     round_ = (existing.details.get("round", 0) + 1) if existing else 0
     key = base_key if round_ == 0 else f"{base_key}:retry{round_}"
     details: dict[str, Any] = {"round": round_}
-    if method == "stripe_voucher":
+    if method in VOUCHER_METHODS:
         details["code"] = voucher_code(settings.voucher_prefix, key)
         if settings.voucher_expiry_days:
             details["expires_at"] = int(
@@ -124,7 +139,7 @@ def queue_payout(
         tenant_id=case.tenant_id,
         case_id=case.id,
         kind=str(decision.get("type")),
-        provider="stripe",
+        provider="shopify" if method.startswith("shopify_") else "stripe",
         method=method,
         amount=float(decision["amount"]),
         currency=str(decision.get("currency") or "USD").upper(),
@@ -169,15 +184,20 @@ def _record_on_decision(case: Case, payout: Payout) -> None:
         "code": payout.details.get("code") if payout.status == "succeeded" else None,
         "error": payout.error,
     }
-    if payout.status == "succeeded" and payout.method == "stripe_voucher":
+    if payout.status == "succeeded" and payout.method in VOUCHER_METHODS:
         expires = payout.details.get("expires_on")
         decision["label"] = (
             f"Voucher code {payout.details['code']} worth {payout.currency} {payout.amount:.2f}"
             f" (single use{f', valid until {expires}' if expires else ''})"
         )
-    elif payout.status == "succeeded" and payout.method == "stripe_refund":
+    elif payout.status == "succeeded" and payout.method in REFUND_METHODS:
         decision["label"] = (
             f"Refund of {payout.currency} {payout.amount:.2f} (issued to the original payment)"
+        )
+    elif payout.status == "succeeded" and payout.method == "shopify_credit":
+        decision["label"] = (
+            f"Store credit of {payout.currency} {payout.amount:.2f} "
+            "(added to the customer's account)"
         )
     case.decisions = {**case.decisions, "compensation": decision}
 
@@ -190,8 +210,11 @@ def issue_payout_job(
     http: httpx.Client,
     stripe_base: str,
     job_id: uuid.UUID,
+    shopify: RunSettings | None = None,
 ) -> None:
-    """Worker handler for `issue_payout`. Raises StripeError for retryable failures."""
+    """Worker handler for `issue_payout`. Raises StripeError / ShopifyError for retryable
+    failures (the job queue retries with backoff). `shopify`: how to reach Shopify stores
+    (token caching, mock API base) for shopify_* methods."""
     with session_factory() as session:
         job = session.get(Job, job_id)
         payout = session.get(Payout, uuid.UUID(job.payload["payout_id"])) if job else None
@@ -204,12 +227,20 @@ def issue_payout_job(
             session.commit()
             return
         settings = settings_of(tenant)
+        on_shopify = payout.method.startswith("shopify_")
+        key = ""
+        shop = shopify_step(session, tenant) if on_shopify else None
         try:
-            key = stripe_key(session, tenant.id, settings.credential_id)
+            if on_shopify and (shop is None or shopify is None):
+                raise ConflictError("Shopify isn't connected (Operations → Shopify).")
+            if not on_shopify:
+                key = stripe_key(session, tenant.id, settings.credential_id)
         except ConflictError as exc:
             _finish(session, job, payout, case, error=str(exc))
             session.commit()
             return
+        found = case.enrichment.get(SHOPIFY_KEY) or {}
+        shopify_order = dict(found.get("data") or {}) if found.get("status") == "ok" else {}
         texts = MessageRepository(session).customer_texts(case.tenant_id, case.id)
         context = case_context(case, texts)
         email = case.customer.email
@@ -228,13 +259,22 @@ def issue_payout_job(
             "case_number": case.case_number,
             "payment_id": context.get(settings.payment_field) if settings.payment_field else None,
             "order": context.get(settings.order_field),
+            "shopify_order": shopify_order,
+            "shopify_order_number": context.get(shop[0].order_field) if shop else None,
         }
         payout_id = payout.id
 
-    client = StripeClient(http, key, stripe_base)  # no database session open from here
+    # No database session open from here.
     try:
-        external_id, details = _call_stripe(client, plan, settings, email)
-    except StripeError as exc:
+        if shop is not None and shopify is not None:
+            client = shopify_client_for(session_factory, http, shopify, shop[1])
+            external_id, details = _call_shopify(client, plan, shop[0], email)
+            mode = "shopify"
+        else:
+            stripe = StripeClient(http, key, stripe_base)
+            external_id, details = _call_stripe(stripe, plan, settings, email)
+            mode = stripe.mode
+    except (StripeError, ShopifyError) as exc:
         with session_factory() as session:
             payout = session.get(Payout, payout_id)
             job = session.get(Job, job_id)
@@ -258,7 +298,7 @@ def issue_payout_job(
         case = session.get(Case, payout.case_id) if payout else None
         assert payout is not None and job is not None and case is not None
         payout.external_id = external_id
-        payout.details = {**payout.details, **details, "mode": client.mode}
+        payout.details = {**payout.details, **details, "mode": mode}
         _finish(session, job, payout, case, error=None)
         session.commit()
 
@@ -342,6 +382,154 @@ def _call_stripe(
     raise StripeError(f"Unknown payout method {method}.", retryable=False)
 
 
+def _call_shopify(
+    client: ShopifyClient, plan: dict[str, Any], settings: Any, email: str
+) -> tuple[str, dict[str, Any]]:
+    """Issue on the business's Shopify store. `settings`: ShopifySettingsData."""
+    order = plan["shopify_order"]
+    if not order.get("orderId"):
+        # Not looked up at intake (e.g. connected later): look it up now.
+        found = lookup_order(
+            client, settings, order_number=plan["shopify_order_number"], email=email
+        )
+        if found.status != "ok":
+            raise ShopifyError(found.error or "No Shopify order for this case.", retryable=False)
+        order = found.fields
+    method, payout_id = plan["method"], plan["payout_id"]
+    amount = f"{plan['amount']:.2f}"
+    currency = plan["currency"]
+    note = f"Local CRM case {plan['case_number']} (payout {payout_id})"
+    if method in ("shopify_refund", "shopify_credit") and order.get("emailMatches") is False:
+        raise ShopifyError(
+            f"Order {order.get('orderNumber')} belongs to a different email address than the "
+            "customer's. Check it, then issue this by hand.",
+            retryable=False,
+        )
+
+    if method == "shopify_refund":
+        payments = client.order_payments(order["orderId"])
+        if payments is None:
+            raise ShopifyError(
+                f"Shopify order {order.get('orderNumber')} is gone.", retryable=False
+            )
+        if plan["check_first"]:  # an earlier attempt may have refunded already
+            earlier = next(
+                (r for r in payments.get("refunds") or [] if payout_id in (r.get("note") or "")),
+                None,
+            )
+            if earlier is not None:
+                return str(earlier["id"]), {
+                    "order": payments.get("name"),
+                    "order_id": order["orderId"],
+                    "shop": client.shop,
+                }
+        if str(payments.get("presentmentCurrencyCode") or currency).upper() != currency:
+            raise ShopifyError(
+                f"The order was paid in {payments.get('presentmentCurrencyCode')}, "
+                f"the refund is in {currency}.",
+                retryable=False,
+            )
+        paid = [
+            t
+            for t in payments.get("transactions") or []
+            if t.get("status") == "SUCCESS" and t.get("kind") in ("SALE", "CAPTURE")
+        ]
+        if not paid:
+            raise ShopifyError(
+                f"Order {payments.get('name')} has no captured payment to refund.", retryable=False
+            )
+        parent = paid[-1]
+        refund = client.refund(
+            order_id=order["orderId"],
+            parent_id=str(parent["id"]),
+            gateway=str(parent.get("gateway") or ""),
+            amount=amount,
+            note=note,
+            notify=settings.notify_customer,
+            idempotency_key=plan["key"],
+        )
+        return str(refund["id"]), {
+            "order": payments.get("name"),
+            "order_id": order["orderId"],
+            "gateway": parent.get("gateway"),
+            "shop": client.shop,
+        }
+
+    if method == "shopify_credit":
+        customer = order.get("customerId")
+        if not customer:
+            raise ShopifyError("The order has no Shopify customer to credit.", retryable=False)
+        if order.get("currency") and str(order["currency"]).upper() != currency:
+            raise ShopifyError(
+                f"The store's currency is {order['currency']}, the credit is in {currency}.",
+                retryable=False,
+            )
+        expires = (
+            (utcnow() + timedelta(days=settings.store_credit_expiry_days)).isoformat()
+            if settings.store_credit_expiry_days
+            else None
+        )
+        try:
+            txn = client.store_credit(
+                customer_id=customer,
+                amount=amount,
+                currency=currency,
+                expires_at=expires,
+                notify=settings.notify_customer,
+            )
+        except ShopifyError as exc:
+            if exc.outcome_unknown:  # no idempotency key: never retry blindly
+                raise ShopifyError(
+                    f"{exc} Shopify may or may not have added the credit: check the customer's "
+                    "store credit in Shopify before clicking Try again.",
+                    retryable=False,
+                ) from exc
+            raise
+        account = txn.get("account") or {}
+        return str(account.get("id") or customer), {
+            "customer": customer,
+            "shop": client.shop,
+            "balance": (account.get("balance") or {}).get("amount"),
+        }
+
+    if method == "shopify_discount":
+        details = plan["details"]
+        code, tag = details["code"], payout_id[:8]
+        title = f"Local CRM case {plan['case_number']} ({tag})"
+
+        def ours() -> dict[str, Any] | None:
+            node = client.discount_by_code(code)
+            found_title = ((node or {}).get("codeDiscount") or {}).get("title") or ""
+            return node if node and tag in found_title else None
+
+        expires = details.get("expires_at")
+        expires_on = datetime.fromtimestamp(expires, UTC).date().isoformat() if expires else None
+        existing = ours() if plan["check_first"] else None
+        if existing is None:
+            if order.get("currency") and str(order["currency"]).upper() != currency:
+                raise ShopifyError(
+                    f"The store's currency is {order['currency']}, the code is in {currency}.",
+                    retryable=False,
+                )
+            try:
+                existing = client.discount_code(
+                    code=code,
+                    title=title,
+                    amount=amount,
+                    customer_id=order.get("customerId") if order.get("emailMatches") else None,
+                    starts_at=utcnow().isoformat(),
+                    ends_at=datetime.fromtimestamp(expires, UTC).isoformat() if expires else None,
+                )
+            except ShopifyError as exc:
+                taken = exc.code == "TAKEN" or "taken" in str(exc).lower() or "unique" in str(exc)
+                existing = ours() if taken else None
+                if existing is None:
+                    raise
+        return str(existing["id"]), {"expires_on": expires_on, "shop": client.shop}
+
+    raise ShopifyError(f"Unknown payout method {method}.", retryable=False)
+
+
 def _finish(session: Session, job: Job, payout: Payout, case: Case, *, error: str | None) -> None:
     payout.status = "failed" if error else "succeeded"
     payout.error = error
@@ -400,6 +588,9 @@ class PayoutService:
             credential = self.session.get(Credential, data.credential_id)
             if credential is None or credential.tenant_id != tenant_id:
                 raise NotFoundError("That credential doesn't exist.")
+        uses_shopify = any(m.startswith("shopify_") for m in data.methods.values())
+        if data.enabled and uses_shopify and shopify_step(self.session, tenant) is None:
+            raise ConflictError("Connect your Shopify store first (Operations → Shopify).")
         tenant.payout_settings = data.model_dump(mode="json")
         self.session.commit()
         return data

@@ -1,13 +1,13 @@
 /**
  * Turns the intake pipeline (or one case's run through it) into diagram nodes:
  *
- *   Case received → ① connector → ② connector → … → Routing → Compensation (→ Stripe) → Agent
+ *   Case received → ⓪ read → ① Shopify order → ② connector → … → Routing → Compensation → Agent
  *
  * Steps run one after another. `uses` links a step to the earlier steps whose
  * data its request needs (from {{enrichment.<key>.<field>}} placeholders).
  */
 import type { ExecutionDetail, PipelineDefinition, StepStatus } from "../api/types";
-import { PAYOUT_STATUS_LABELS } from "./payouts";
+import { METHOD_SHORT, PAYOUT_STATUS_LABELS } from "./payouts";
 
 export type NodeKind = "start" | "reader" | "connector" | "routing" | "compensation" | "end";
 /** "done" = a non-connector stage that happened; "waiting" = not reached yet. */
@@ -65,20 +65,26 @@ export function readerLabel(model: string): string {
   return READER_LABELS[model] ?? model;
 }
 
+/** "Shopify", "Stripe" or "Shopify and Stripe", from the payout methods in use. */
+export function payoutProviders(methods: Partial<Record<string, string>>): string {
+  const used = new Set(Object.values(methods).map((m) => (m?.startsWith("shopify") ? "Shopify" : "Stripe")));
+  return [...used].sort().join(" and ") || "your provider";
+}
+
 const percent = (n: number | null) => (n === null ? "" : ` (${Math.round(n * 100)}%)`);
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** The business-wide pipeline every new case goes through. */
 export function definitionNodes(d: PipelineDefinition): FlowNode[] {
-  const keys = new Set(d.connectors.map((c) => c.key));
+  const keys = new Set([...d.connectors.map((c) => c.key), ...(d.shopify ? ["shopify"] : [])]);
   const nodes: FlowNode[] = [
     {
       id: "start",
       kind: "start",
       title: "Case received",
       subtitle: "Webform, email or API",
-      facts: d.connectors.length ? ["Enrichment starts automatically"] : ["No connectors: routed straight away"],
+      facts: d.connectors.length || d.shopify ? ["Enrichment starts automatically"] : ["No connectors: routed straight away"],
       uses: [],
       problems: [],
     },
@@ -94,6 +100,22 @@ export function definitionNodes(d: PipelineDefinition): FlowNode[] {
         ...(d.reading.fields.length ? [`Finds: ${d.reading.fields.map((f) => f.label).join(", ")}`] : []),
         ...(d.reading.read_category ? ["Chooses the category from the tone and context"] : []),
         `Saves answers ≥ ${Math.round(d.reading.min_confidence * 100)}% confident; the rest go to an agent`,
+      ],
+      uses: [],
+      problems: [],
+    });
+  }
+  if (d.shopify) {
+    nodes.push({
+      id: stepId("shopify"),
+      kind: "connector",
+      number: 1,
+      title: "Shopify order",
+      subtitle: d.shopify.shop,
+      facts: [
+        `Finds the order by ${d.shopify.order_field}`,
+        ...(d.shopify.match_by_email ? ["No order number: the customer's latest order, by email"] : []),
+        "Saves order total, payment, delivery, tracking, days late",
       ],
       uses: [],
       problems: [],
@@ -135,7 +157,7 @@ export function definitionNodes(d: PipelineDefinition): FlowNode[] {
       subtitle: d.compensation_rules.length ? "First matching rule decides" : "No rules: no decision is made",
       facts: [
         ...d.compensation_rules.map((r) => `${r.name} → ${r.outcome}`),
-        ...(d.payouts ? [`Approved: issued through Stripe${d.payouts.auto_pay ? " automatically" : " when an agent clicks Issue"}`] : []),
+        ...(d.payouts ? [`Approved: issued through ${payoutProviders(d.payouts.methods)}${d.payouts.auto_pay ? " automatically" : " when an agent clicks Issue"}`] : []),
       ],
       uses: [],
       problems: [],
@@ -208,7 +230,7 @@ export function executionNodes(d: PipelineDefinition, e: ExecutionDetail): FlowN
               decision.label ?? "No compensation",
               ...(decision.rule_name ? [`Rule: ${decision.rule_name}`] : []),
               statusText(decision.status),
-              ...(decision.payout ? [`Stripe: ${PAYOUT_STATUS_LABELS[decision.payout.status].toLowerCase()}`] : []),
+              ...(decision.payout ? [`${METHOD_SHORT[decision.payout.method]}: ${PAYOUT_STATUS_LABELS[decision.payout.status].toLowerCase()}`] : []),
             ]
         : [routed ? "No rules when this case was routed" : "Not reached"],
       problems: [],

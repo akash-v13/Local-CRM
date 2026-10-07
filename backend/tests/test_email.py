@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.mailboxes import get_mail_transport
 from app.config import Settings
-from app.email.parse import case_number_in, parse_email, reply_subject, strip_quoted
+from app.email.parse import case_number_in, contact_form, parse_email, reply_subject, strip_quoted
 from app.email.transport import (
     ConnectionCheck,
     FetchedMessage,
@@ -630,3 +630,62 @@ def test_transport_refuses_private_hosts_and_plain_connections() -> None:
             limit=1,
             mark_as_read=False,
         )
+
+
+SHOPIFY_FORM = """You received a new message from your online store's contact form.
+
+Country Code:
+US
+
+Name:
+Priya Raman
+
+Email:
+priya@example.com
+
+Phone Number:
+555 0100
+
+Order number:
+NW-10211
+
+Comment:
+Hi, my order hasn't arrived.
+
+It was a gift."""
+
+
+def test_contact_form_is_read_from_label_lines() -> None:
+    form = contact_form("mailer@shopify.com", None, SHOPIFY_FORM)
+    assert form is not None
+    assert (form.email, form.name) == ("priya@example.com", "Priya Raman")
+    assert form.message == "Hi, my order hasn't arrived.\n\nIt was a gift."
+    assert form.fields == {"Phone Number": "555 0100", "Order number": "NW-10211"}
+    inline = "New message from your store's contact form\nName: Al\nEmail: al@example.com\nBody: Hi"
+    assert contact_form("shop@store.example.com", None, inline) is not None
+    # Reply-To wins; ordinary emails aren't forms.
+    replied = contact_form("mailer@shopify.com", "real@example.com", SHOPIFY_FORM)
+    assert replied is not None and replied.email == "real@example.com"
+    assert contact_form("maya@example.com", None, "Name: x\nComment: y") is None
+
+
+def test_shopify_contact_form_email_becomes_the_customers_case(
+    client: TestClient, tenant_id: str, mail: FakeMailServer, work: Worker
+) -> None:
+    link(client, tenant_id)
+    mail.deliver(
+        raw_email(
+            sender=f"Northwind <{SUPPORT}>",  # Shopify may send it "from" the store itself
+            subject="New customer message on October 7, 2026 at 9:14 am",
+            body=SHOPIFY_FORM,
+            headers={"Reply-To": "Priya Raman <priya@example.com>"},
+        )
+    )
+    work()
+    [case] = cases(client, tenant_id)
+    assert case["customer"]["email"] == "priya@example.com"
+    assert case["customer"]["display_name"] == "Priya Raman"
+    assert case["attributes"]["contactForm"] == "shopify"
+    [message] = detail(client, tenant_id, case["case_number"])["messages"]
+    assert message["body"].startswith("Hi, my order hasn't arrived.")
+    assert "Order number: NW-10211" in message["body"]

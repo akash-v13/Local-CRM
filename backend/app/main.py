@@ -20,6 +20,7 @@ from app.api import (
     reading,
     replies,
     reports,
+    shopify,
     tenants,
 )
 from app.domain.errors import (
@@ -59,6 +60,7 @@ app.include_router(reading.router)
 app.include_router(reading.case_router)
 app.include_router(payouts.router)
 app.include_router(payouts.case_router)
+app.include_router(shopify.router)
 
 
 # Map domain errors (raised by services) to HTTP responses in one place.

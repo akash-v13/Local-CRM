@@ -48,7 +48,7 @@ Keep the enrichment flow model, but let each customer configure it through a UI:
   - repeat-claimant / fraud checks
 - **Simulation / backtest before going live:** "run this matrix against the last 90 days of cases — here's what it would have cost." This is a strong selling point.
 - **Audit and explainability:** version the matrix, give rules effective dates, and record why each rule fired on each case (the same idea as the "case response checks" audit trail).
-- **Fulfillment:** issuing compensation needs payout connectors (refunds, gift cards, loyalty points, credits). **Idempotency is critical** so nobody is ever paid twice. *(Built for Stripe in Oct 2026: refunds, balance credit and voucher codes, one idempotency key per decision. Cash payouts and gift cards still to come.)* Delayed sends need a scheduler that can also cancel if the case changes.
+- **Fulfillment:** issuing compensation needs payout connectors (refunds, gift cards, loyalty points, credits). **Idempotency is critical** so nobody is ever paid twice. *(Built for Stripe in Oct 2026: refunds, balance credit and voucher codes, one idempotency key per decision. Shopify refunds, store credit and discount codes followed the same day. Cash payouts and gift cards still to come.)* Delayed sends need a scheduler that can also cancel if the case changes.
 - **Keep the core principle:** the matrix decides the money and the LLM writes the message. AI can also help with setup: suggesting field mappings, drafting a rule from plain English (stored as a deterministic rule), and classifying free-text cases into matrix categories.
 
 ## Gaps to think about

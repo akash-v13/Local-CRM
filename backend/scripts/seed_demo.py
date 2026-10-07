@@ -16,6 +16,12 @@ Creates "Northwind Outfitters (demo)", a fictional online shop:
   waiting for approval, no compensation (weather), a failed shop lookup,
   replies, notes, solved
 
+Also creates "Harbor Goods (Shopify demo)", a small store run by its owner and
+connected to the fake Shopify in the mocks service: order lookup by order number or
+email, rules on Shopify's data (days late, order email matches), and compensation
+issued on the store (a refund, store credit, a discount code), plus a case quoting
+someone else's order. `--no-shopify` skips it.
+
 It talks to the API like any client would, so it also works as a smoke test.
 Running it again creates another demo business; nothing is overwritten.
 All names, emails and orders are made up.
@@ -31,6 +37,8 @@ from typing import Any
 import httpx
 
 MOCKS = "http://mocks:8100"  # how the API/worker reach the mock API inside docker-compose
+LOCAL_MOCKS = "http://localhost:8100"  # the same mock API, from this machine
+SHOP = "harbor-goods.myshopify.com"
 MAIL_HOST = "mail"  # the test mail server, as the API/worker reach it inside docker-compose
 LOCAL_SMTP = ("localhost", 3025)  # the same server, from this machine
 AGENT = "agent.alex"
@@ -563,6 +571,118 @@ def seed_email(api: Api, t: str, tenant_id: str) -> None:
     )
 
 
+def seed_shopify(api: Api) -> None:
+    """A small store connected to the fake Shopify (mocks/shopify.py)."""
+    tenant = api.post(
+        "/tenants", {"name": f"Harbor Goods (Shopify demo {int(time.time()) % 10000})"}
+    )
+    t = f"/tenants/{tenant['id']}"
+    print(f"\nBusiness: {tenant['name']}")
+    # Who placed which order (only the fake Shopify needs telling).
+    owners = {
+        "#1006": "priya.raman@example.com",
+        "#1020": "marco.rossi@example.com",
+        "#1023": "jin.park@example.com",
+        "#1013": "owen.hart@example.com",
+    }
+    httpx.post(f"{LOCAL_MOCKS}/shopify/{SHOP}/_demo/customers", json=owners, timeout=10)
+    check = api.post(
+        f"{t}/shopify/connect",
+        {"shop": SHOP, "client_id": "demo-shopify-client", "client_secret": "demo-shopify-secret"},
+    )
+    if not check["ok"]:
+        sys.exit(f"Shopify demo: couldn't connect ({check['detail']}). Is SHOPIFY_API_BASE set?")
+    print(f"  Shopify: {check['detail']} ✓")
+
+    late = cond("category.subcategory", "equals", "Late delivery")
+    theirs = cond("enrichment.shopify.emailMatches", "equals", "true")
+    rules = [
+        (
+            "Late 5+ days: 30% refund",
+            [late, theirs, cond("enrichment.shopify.daysLate", "greater_than", "4")],
+            {
+                "type": "refund",
+                "amount_mode": "percent",
+                "percent": 30,
+                "percent_of": "enrichment.shopify.orderTotal",
+                "cap": 100,
+            },
+        ),
+        (
+            "Late 2-4 days: $10 store credit",
+            [late, theirs, cond("enrichment.shopify.daysLate", "greater_than", "1")],
+            {"type": "store_credit", "amount": 10},
+        ),
+        (
+            "Damaged item: $15 discount code",
+            [cond("category.subcategory", "equals", "Damaged item"), theirs],
+            {"type": "voucher", "amount": 15},
+        ),
+    ]
+    for priority, (name, conditions, outcome) in enumerate(rules, start=1):
+        api.post(
+            f"{t}/compensation/rules",
+            {
+                "name": name,
+                "priority": priority * 10,
+                "match_criteria": {"match": "all", "conditions": conditions},
+                "outcome": outcome,
+            },
+        )
+    api.put(
+        f"{t}/payouts/settings",
+        {
+            "enabled": True,
+            "auto_pay": True,
+            "methods": {
+                "refund": "shopify_refund",
+                "store_credit": "shopify_credit",
+                "voucher": "shopify_discount",
+            },
+        },
+    )
+    print("  rules on Shopify data + payouts through Shopify ✓")
+
+    def case(name: str, email: str, sub: str, category: str, order: str | None, text: str) -> int:
+        created = api.post(
+            f"{t}/cases",
+            {
+                "channel": "webform",
+                "customer": {"email": email, "display_name": name},
+                "category": {"type": "Complaint" if order else "Question", "category": category,
+                             "subcategory": sub},
+                "message": text,
+                "attributes": {"orderNumber": order} if order else {},
+            },
+        )  # fmt: skip
+        number: int = created["case_number"]
+        return number
+
+    numbers = [
+        case("Priya Raman", "priya.raman@example.com", "Late delivery", "Delivery", "#1006",
+             "My order #1006 came a week late and missed the birthday it was for."),
+        case("Marco Rossi", "marco.rossi@example.com", "Late delivery", "Delivery", "1020",
+             "Order 1020 arrived a couple of days later than promised."),
+        case("Jin Park", "jin.park@example.com", "Damaged item", "Order", "#1023",
+             "The vase in order #1023 arrived chipped. Photos attached."),
+        case("Elena Novak", "elena.novak@example.com", "Late delivery", "Delivery", "#1013",
+             "Order #1013 is very late, I want a refund."),
+        case("Priya Raman", "priya.raman@example.com", "Order status", "Order", None,
+             "Hi again, will my next order ship the same way?"),
+    ]  # fmt: skip
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        cases = [api.get(f"{t}/cases/{n}") for n in numbers]
+        payouts = [(c["decisions"].get("compensation") or {}).get("payout") or {} for c in cases]
+        if all(c["status"] != "Intake" for c in cases) and all(
+            p.get("status") in (None, "succeeded", "failed") for p in payouts
+        ):
+            break
+        time.sleep(1)
+    issued = api.get(f"{t}/payouts")
+    print(f"  {len(numbers)} cases looked up in Shopify; {len(issued)} compensations issued ✓")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--api", default="http://localhost:8000", help="API base URL")
@@ -571,8 +691,11 @@ def main() -> None:
         action="store_true",
         help="Also write AI drafts (needs ANTHROPIC_API_KEY; costs ~$0.02)",
     )
+    parser.add_argument("--no-shopify", action="store_true", help="Skip the Shopify demo store")
     args = parser.parse_args()
     seed(Api(args.api), args.with_ai)
+    if not args.no_shopify:
+        seed_shopify(Api(args.api))
 
 
 if __name__ == "__main__":

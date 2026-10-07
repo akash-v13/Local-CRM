@@ -5,7 +5,7 @@ import { api, errorMessage } from "../api/client";
 import type { CaseDetail, CompensationDecision } from "../api/types";
 import { STATUS_LABELS, formatMoney, isFinal } from "../lib/compensation";
 import { formatCaseNumber, formatDateTime } from "../lib/format";
-import { METHOD_SHORT, PAYOUT_STATUS_LABELS, methodFor } from "../lib/payouts";
+import { METHOD_SHORT, PAYOUT_STATUS_LABELS, externalLabel, methodFor } from "../lib/payouts";
 import { useLoad } from "../lib/useLoad";
 
 interface Props {
@@ -19,7 +19,7 @@ interface Props {
  * guardrail tripped) approve / reject. "Decide again" re-runs the rules,
  * e.g. after enrichment finished or rules changed; not allowed once approved
  * or rejected. AI drafts only mention compensation once it's approved.
- * Approved compensation can be issued through the business's Stripe account
+ * Approved compensation can be issued through the business's Stripe account or Shopify store
  * (Operations → Payouts); its progress shows here, with Issue / Try again.
  */
 export function CompensationCard({ caseDetail, agentId, onChanged }: Props) {
@@ -148,7 +148,7 @@ interface PayoutLineProps {
   onPay: () => void;
 }
 
-/** Whether approved compensation was issued through Stripe, and Issue / Try again. */
+/** Whether approved compensation was issued (Stripe / Shopify), and Issue / Try again. */
 function PayoutLine({ decision, method, autoPay, busy, onPay }: PayoutLineProps) {
   const p = decision.payout;
   if (p) {
@@ -158,25 +158,25 @@ function PayoutLine({ decision, method, autoPay, busy, onPay }: PayoutLineProps)
           <span className={`tag payout-${p.status}`}>{PAYOUT_STATUS_LABELS[p.status]}</span>{" "}
           {METHOD_SHORT[p.method]}
           {p.code && <> · code <code className="code-inline">{p.code}</code></>}
-          {p.external_id && <span className="muted"> · {p.external_id}</span>}
+          {p.external_id && <span className="muted"> · {externalLabel(p.external_id)}</span>}
         </p>
         {p.error && p.status !== "succeeded" && <p className="error small">{p.error}</p>}
         {p.status === "failed" && (
           <button type="button" className="button small" disabled={busy} onClick={onPay}>Try again</button>
         )}
-        {p.status === "retrying" && <p className="hint">Stripe didn't answer cleanly; trying again shortly. It can't be paid twice.</p>}
+        {p.status === "retrying" && <p className="hint">{p.method.startsWith("shopify") ? "Shopify" : "Stripe"} didn't answer cleanly; trying again shortly. It can't be paid twice.</p>}
       </div>
     );
   }
   if (!method) {
-    return <p className="hint">Issue this by hand, or let Local CRM issue it through Stripe (<Link to="/ops/payouts">Payouts</Link>).</p>;
+    return <p className="hint">Issue this by hand, or let Local CRM issue it through Shopify or Stripe (<Link to="/ops/payouts">Payouts</Link>).</p>;
   }
   return (
     <div className="payout-line">
       {autoPay ? (
-        <p className="hint">Will be issued automatically as a {METHOD_SHORT[method].toLowerCase()}.</p>
+        <p className="hint">Will be issued automatically as a {METHOD_SHORT[method]}.</p>
       ) : (
-        <button type="button" className="button small" disabled={busy} onClick={onPay}>Issue {METHOD_SHORT[method].toLowerCase()}</button>
+        <button type="button" className="button small" disabled={busy} onClick={onPay}>Issue {METHOD_SHORT[method]}</button>
       )}
     </div>
   );

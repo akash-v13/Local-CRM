@@ -309,7 +309,9 @@ def ingest_message(
     from app.services.cases import CaseService  # cases imports this module's helpers
 
     parsed = parse_email(raw=fetched.raw, fallback_id=f"{mailbox.id}:{uid_validity}:{fetched.uid}")
-    if parsed.from_address in ("", mailbox.address):
+    # (Shopify may send contact-form emails "from" the store's own address.)
+    sender = parsed.form.email if parsed.form else parsed.from_address
+    if sender in ("", mailbox.address):
         return "skipped: sent by this inbox"
     if parsed.automatic:
         return f"skipped: automatic ({parsed.automatic})"
@@ -337,15 +339,23 @@ def ingest_message(
     attributes: dict[str, Any] = {"subject": parsed.subject}
     if case is not None:
         attributes["relatedCase"] = case.case_number
+    customer = CustomerIn(email=parsed.from_address, display_name=parsed.from_name)
+    message = _text(parsed, reply=case is not None)
+    if parsed.form is not None:  # a store contact form: the case is the form's customer's
+        form = parsed.form
+        customer = CustomerIn(email=form.email, display_name=form.name)
+        details = "\n".join(f"{k}: {v}" for k, v in form.fields.items())
+        message = form.message + (f"\n\n{details}" if details else "")
+        attributes["contactForm"] = form.source
     created = service.create_case(
         mailbox.tenant_id,
         CaseCreate(
             channel="email",
-            customer=CustomerIn(email=parsed.from_address, display_name=parsed.from_name),
+            customer=customer,
             category=CategoryIn.model_validate(mailbox.default_category)
             if mailbox.default_category
             else None,
-            message=_text(parsed, reply=case is not None),
+            message=message,
             attributes=attributes,
         ),
         inbound=inbound,

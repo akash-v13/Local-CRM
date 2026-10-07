@@ -53,6 +53,10 @@ from app.schemas import (
 )
 from app.services.payouts import settings_of as payout_settings_of
 from app.services.reading import settings_of
+from app.services.shopify import FIELD_LABELS as SHOPIFY_LABELS
+from app.services.shopify import STEP_KEY as SHOPIFY_KEY
+from app.services.shopify import STEP_NAME as SHOPIFY_NAME
+from app.services.shopify import shopify_step
 
 ENRICHMENT = "enrichment."
 
@@ -134,12 +138,19 @@ class PipelineService:
         all_connectors = self.connectors.list(tenant_id)
         active = [c for c in all_connectors if c.is_active]  # already in run order
         credentials = {c.id: c for c in self.credentials.list(tenant_id)}
-        position = {c.key: i for i, c in enumerate(active, start=1)}
+        tenant = self.tenants.get(tenant_id)
+        assert tenant is not None  # checked by _tenant_settings above
+        shopify = shopify_step(self.session, tenant)
+        first = 2 if shopify else 1  # the Shopify lookup is step ① when it's on
+        position = {c.key: i for i, c in enumerate(active, start=first)}
         saved = {c.key: {m["target"] for m in c.field_mappings} for c in active}
         names = {c.key: c.name for c in all_connectors}
+        if shopify:
+            position[SHOPIFY_KEY], names[SHOPIFY_KEY] = 1, SHOPIFY_NAME
+            saved[SHOPIFY_KEY] = set(SHOPIFY_LABELS)
 
         steps: list[PipelineConnectorStep] = []
-        for i, c in enumerate(active, start=1):
+        for i, c in enumerate(active, start=first):
             uses = dependencies(c)
             problems: list[str] = []
             for dep in (d for d in uses if d.source == "step"):
@@ -209,11 +220,23 @@ class PipelineService:
             )
             for r in self.rules.list(tenant_id, active_only=True)
         ]
-        tenant = self.tenants.get(tenant_id)
-        assert tenant is not None  # checked by _tenant_settings above
         reading = settings_of(tenant)
         payouts = payout_settings_of(tenant)
         return PipelineDefinition(
+            shopify=(
+                {
+                    "shop": shopify[1].config.get("shop"),
+                    "order_field": shopify[0].order_field,
+                    "match_by_email": shopify[0].match_by_email,
+                    "fields": [
+                        {"key": k, "label": v}
+                        for k, v in SHOPIFY_LABELS.items()
+                        if k not in ("orderId", "customerId")
+                    ],
+                }
+                if shopify
+                else None
+            ),
             reading=(
                 {
                     "channels": reading.channels,
@@ -254,7 +277,24 @@ class PipelineService:
         }
         waiting = case.status == "Intake"
         steps: list[ExecutionStep] = []
-        for i, c in enumerate(active, start=1):
+        tenant = self.tenants.get(case.tenant_id)
+        first = 1
+        if tenant is not None and shopify_step(self.session, tenant):
+            first = 2
+            raw = results.pop(SHOPIFY_KEY, None)
+            if raw is None:
+                steps.append(
+                    ExecutionStep(
+                        key=SHOPIFY_KEY,
+                        name=SHOPIFY_NAME,
+                        position=1,
+                        status="pending" if waiting else "not_run",
+                        error=None if waiting else "Connected after this case was enriched.",
+                    )
+                )
+            else:
+                steps.append(self._step(SHOPIFY_KEY, SHOPIFY_NAME, 1, raw, detail))
+        for i, c in enumerate(active, start=first):
             raw = results.pop(c.key, None)
             if raw is None:
                 steps.append(

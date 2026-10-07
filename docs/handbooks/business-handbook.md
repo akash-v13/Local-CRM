@@ -40,7 +40,8 @@ Every screenshot uses a made-up demo shop called *Northwind Outfitters*. Ask who
 - [B6. Testing AI before you change anything](#b6-testing-ai-before-you-change-anything)
 - [B7. Connecting your email inbox](#b7-connecting-your-email-inbox)
 - [B8. Reading messages](#b8-reading-messages)
-- [B9. Payouts: issuing compensation through Stripe](#b9-payouts-issuing-compensation-through-stripe)
+- [B9. Payouts: issuing compensation through Shopify or Stripe](#b9-payouts-issuing-compensation-through-shopify-or-stripe)
+- [B10. Connecting your Shopify store](#b10-connecting-your-shopify-store)
 
 **Part C: Recipes and reference**
 
@@ -239,7 +240,7 @@ When a case is routed, your business's **compensation rules** decide what the cu
 - **Reject:** type a reason first, then click Reject. Nothing is offered.
 - **Decide again:** re-runs the rules, e.g. after order data arrived or the rules changed. Not possible once a decision has been approved or rejected.
 
-**Paying it.** If your business issues compensation through Stripe ([B9](#b9-payouts-issuing-compensation-through-stripe)), the bottom of the card shows how that went:
+**Paying it.** If your business issues compensation through Stripe ([B9](#b9-payouts-issuing-compensation-through-shopify-or-stripe)), the bottom of the card shows how that went:
 - **Issued** · *Stripe refund* · `re_…`: done. A voucher shows its **code**, and AI drafts quote it.
 - **Issuing… / Retrying:** Stripe is being asked, or didn't answer cleanly and will be asked again. It can't be paid twice.
 - **Failed**, with the reason (e.g. *Couldn't find the Stripe payment for order NW-10404*). Fix the cause, then click **Try again**.
@@ -260,7 +261,7 @@ If the card says *Issue this by hand*, this type isn't issued through Stripe: gi
 
 ![Enrichment](images/case-enrichment.png)
 
-When a case comes in, the platform looks up data in your systems, such as order total, days late, carrier, and who caused a delay.
+When a case comes in, the platform looks up data in your systems, such as order total, days late, carrier, and who caused a delay. If your store is on Shopify, the first lookup is your Shopify order ([B10](#b10-connecting-your-shopify-store)).
 
 - **✓ OK** means the lookup worked.
 - **An error** means a system didn't answer. The case is still routed unless your manager marked that lookup as required.
@@ -548,9 +549,11 @@ In **Pipeline → Executions**, this is step **⓪ Read the message**, with the 
 
 **Which model reads?** *Jev* (TypeSafe AI's decision model) when your administrator has set a TypeSafe key: about $0.00004 a message, in a fraction of a second. Otherwise *Claude*, about $0.001 a message. With neither key, a field is filled only when exactly one match is found, and no category is chosen. Personal details (names, email addresses, phone numbers) are hidden from the model.
 
-## B9. Payouts: issuing compensation through Stripe
+## B9. Payouts: issuing compensation through Shopify or Stripe
 
-Under **Operations → Payouts**, approved compensation can be issued through **your own Stripe account**: no copying amounts into Stripe by hand. Local CRM never holds your money; Stripe moves it from your account, and every payout shows up in your Stripe dashboard.
+Under **Operations → Payouts**, approved compensation can be issued through **your own Shopify store** or **Stripe account**: no copying amounts in by hand. Local CRM never holds your money; Shopify or Stripe moves it, and every payout shows up in your Shopify admin or Stripe dashboard.
+
+**If you sell on Shopify**, connect your store first ([B10](#b10-connecting-your-shopify-store)). Then choose the Shopify methods below; you don't need Stripe at all.
 
 ![Payouts settings and recent payouts](images/payouts.png)
 
@@ -558,27 +561,68 @@ Under **Operations → Payouts**, approved compensation can be issued through **
 
 | Compensation type | Can be issued as |
 |---|---|
-| Refund | **Refund the payment**: back to the card or account the customer paid with |
-| Store credit | **Balance credit** on the customer's Stripe balance (used on their next invoice, so subscriptions and invoices only), or a **voucher code** |
-| Voucher | **Voucher code**: a single-use Stripe promotion code for their next checkout |
+| Refund | **Shopify: refund the order** (back to how they paid), or **Stripe: refund the payment** |
+| Store credit | **Shopify: store credit** on the customer's account, or a **discount code**; **Stripe: balance credit** (used on their next invoice, so subscriptions and invoices only), or a **voucher code** |
+| Voucher | **Shopify: discount code** or **Stripe: voucher code**: single use, for their next checkout |
 | Loyalty points, replacement | **By hand** (outside Local CRM) |
 
 Stripe can't send cash to a customer's bank account. That needs a different provider and isn't built yet.
 
-**To set it up:**
+**To set it up with Shopify:** connect the store (B10), then under **Payouts** tick **Issue approved compensation through Shopify or Stripe**, pick the Shopify methods, choose **Issue automatically** or not, and **Save**.
+
+**To set it up with Stripe:**
 1. In Stripe, copy a **secret key**. Start with a test key (`sk_test_…`) and switch to a live key (`sk_live_…`) when you're happy. A restricted key works if it can write Refunds, Customers, Coupons and Promotion codes.
 2. **Operations → Credentials → New credential**, type **Bearer token**, paste the key. It's encrypted and never shown again.
-3. **Operations → Payouts:** tick **Issue compensation through Stripe**, choose the credential and click **Check Stripe**. It says whether the key works and whether it's **test** or **live** (real money).
+3. **Operations → Payouts:** tick **Issue approved compensation through Shopify or Stripe**; under **Stripe**, choose the credential and click **Check Stripe**. It says whether the key works and whether it's **test** or **live** (real money).
 4. **How each type is issued:** pick a method per compensation type.
 5. **Finding the payment to refund:** most shops put the order number in the Stripe payment's metadata (e.g. `order_id`). Tell the platform which case field has the order number and which metadata key to match. If a connector returns the Stripe payment id (`pi_…`), choose that field instead.
 6. **Vouchers:** the code prefix (e.g. *SORRY*) and how many days codes stay valid.
 7. Choose **Issue automatically** (as soon as compensation is approved) or leave it off so an agent clicks **Issue** on each case. **Save**.
 
 **Safety:**
-- Each decision is paid **at most once**, even if someone double-clicks, the worker restarts, or Stripe times out. Stripe recognises the repeat request and returns the first result.
+- Each decision is paid **at most once**, even if someone double-clicks, the worker restarts, or Shopify or Stripe times out. They recognise the repeat request and return the first result.
 - Only **approved** compensation is paid. Anything waiting for approval waits.
 - A refund is refused if the payment was in a different currency.
-- Every attempt and its result is in the case's history and in **Recent payouts**, with a link to Stripe.
+- **Shopify refunds and store credit are only issued when the order's email matches the customer's.** Anyone can type someone else's order number.
+- If Shopify doesn't confirm a store credit, it isn't tried again automatically: the case asks you to check the customer's store credit in Shopify first, then **Try again**.
+- Every attempt and its result is in the case's history and in **Recent payouts**, with a link to Shopify or Stripe.
+
+## B10. Connecting your Shopify store
+
+Under **Operations → Shopify**, connect your store once. From then on every new case comes with its order, and approved compensation can be issued on the store.
+
+![Shopify settings and a test lookup](images/shopify.png)
+
+**1. Connect your store** (about 10 minutes, once). The page walks you through it:
+1. Open Shopify's **Dev Dashboard** (dev.shopify.com), signed in as the store owner, and **Create app** (e.g. *Local CRM*).
+2. Give it the access the page lists: read orders, refund orders, read customers, give store credit, create discount codes. Release that version and **install** the app on your store.
+3. Copy the app's **Client ID** and **Client secret** into the page with your store's domain (e.g. *harbor-goods*, or *harbor-goods.myshopify.com*), and click **Connect**. You'll see *Connected to <your store>*. The secret is encrypted and never shown again.
+
+**2. Order lookup.** Every new case looks up its order:
+- **The order number is in:** where the customer's order number is. Webform cases have an order number field. For email, turn on **Reading** (B8) so the order number is pulled out of the message.
+- **No order number?** Use the customer's latest order, found by their email address.
+- An order number that isn't found is shown as an error on the case. It is never swapped for a different order.
+
+On a case, the **Enrichment** card shows what was found:
+
+| On the case | A refund issued on the store | A discount code |
+|---|---|---|
+| ![Order data on a case](images/shopify-case-enrichment.png) | ![A refund on a case](images/shopify-case-refund.png) | ![A discount code on a case](images/shopify-case-discount.png) |
+
+The most useful fields for rules (B4) are **Days late** (`daysLate`), **Order total** (`orderTotal`), **Payment status**, **Delivery status**, **Customer's orders** and **Order email matches the customer's** (`emailMatches`). For example:
+- *Subcategory is Late delivery* **and** *Shopify: Days late is greater than 4* **and** *Shopify: Order email matches the customer's is true* → refund 30% of *Shopify: Order total*.
+
+Always include **Order email matches** in rules that give money: it stops someone using another customer's order number.
+
+**3. Refunds, store credit and discount codes.** Choose whether Shopify emails the customer when a refund or store credit is issued, and whether store credit expires. Then pick the Shopify methods under **Payouts** (B9).
+
+**Test the lookup:** pick a case (or type an order number or email) and click **Look up** to see exactly what a new case would get, with a link to the order in Shopify.
+
+**Contact form:** if your store's contact form emails your support inbox (B7), each message becomes a case for the **customer who filled in the form**, not for Shopify's sender, with any extra form fields (like an order number) in the message.
+
+In **Pipeline**, the lookup is step **① Shopify order**, before your other connectors:
+
+![Step 1 in a case's run](images/shopify-pipeline-execution.png)
 
 # Part C: Recipes and reference
 
@@ -643,6 +687,9 @@ Create a rule *Weather delays: no compensation* with the condition *Shipping tra
 | The draft didn't mention the refund. | The compensation isn't **approved** yet, or a rule decided *no compensation*. Check the Compensation card. |
 | I can't click *Decide again*. | The decision was already approved or rejected. Those are final, because the customer may already have been told. |
 | A payout failed: *Couldn't find the Stripe payment for order …* | The order number isn't in any Stripe payment's metadata under the key set in **Payouts → Finding the payment**. Check the key with your shop, or map the payment id with a connector, then click **Try again**. |
+| Shopify: *No Shopify order NW-…* | The order number on the case isn't in your store. Check what the customer wrote; correct the order number field, then **Re-run enrichment**. |
+| Shopify: *The Shopify app isn't allowed to do this* | The app is missing an access scope. Add it in the Dev Dashboard (the list is on **Operations → Shopify**), release, then **Check connection**. |
+| A Shopify payout failed: *belongs to a different email address* | The order isn't the customer's (or they used another email). Check it in Shopify; if it's fine, issue it by hand. |
 | A payout failed: *No Stripe customer has the email …* | Balance credit needs the customer to exist in Stripe with the same email. Use a voucher code for this type instead, or issue it by hand. |
 | Why do two cases from one customer get different treatment? | The repeat-claim guardrail: a second compensation within the window needs approval. |
 
@@ -650,7 +697,8 @@ Create a rule *Weather delays: no compensation* with the condition *Shipping tra
 
 - **Sign-in.** The business picker and "Acting as" box are temporary.
 - **Email for Microsoft 365 / Outlook.com, and attachment files.** Inboxes connect with an app password (Gmail, iCloud, Yahoo, Fastmail, Zoho, other IMAP hosts). Attachments are listed but not stored. Webform and API cases still have simulated replies.
-- **Cash payouts.** Refunds, balance credit and voucher codes go through Stripe ([B9](#b9-payouts-issuing-compensation-through-stripe)); sending cash to a customer's bank (PayPal, Wise and similar) isn't built yet.
+- **Cash payouts.** Refunds, store credit and codes go through Shopify or Stripe ([B9](#b9-payouts-issuing-compensation-through-shopify-or-stripe)); sending cash to a customer's bank (PayPal, Wise and similar) isn't built yet.
+- **One-click Shopify install.** Today you create a small app in Shopify's Dev Dashboard (B10). An *Install* button from the Shopify App Store comes later.
 - **SLA timers, automatic escalation and auto-close.** SLA hours and the reopen window are saved on queues but not enforced yet, so Solved cases aren't closed automatically.
 - **AI sending replies on its own.** The setting exists, but every draft still needs a person.
 
@@ -663,6 +711,7 @@ Your administrator can load the *Northwind Outfitters* demo shown in this handbo
 - connectors to a pretend shop and shipping system
 - compensation rules
 - Stripe payouts against a pretend Stripe (no real money)
+- a second business, *Harbor Goods*, connected to a pretend Shopify store: order lookups, a refund, store credit, a discount code, and a case quoting someone else's order
 - a persona template
 - sample cases
 - seven cases in different states, including one where a lookup fails

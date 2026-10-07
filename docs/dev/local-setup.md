@@ -124,7 +124,7 @@ Everything except AI drafting works without a key. To turn AI drafting on:
 
 ## Load demo data
 
-With the stack running, create a made-up shop ("Northwind Outfitters") with queues, connectors to the mock API, compensation rules, Stripe payouts (against the fake Stripe), a persona template, sample cases and cases in different states:
+With the stack running, create a made-up shop ("Northwind Outfitters") with queues, connectors to the mock API, compensation rules, Stripe payouts (against the fake Stripe), a second business on a fake Shopify store, a persona template, sample cases and cases in different states:
 
 ```bash
 cd backend
@@ -217,6 +217,17 @@ docker-compose points payouts at a **fake Stripe** in the mocks service (`STRIPE
 4. Use an order number with `404` in it: the payout **fails** with *Couldn't find the Stripe payment…*; fix it, then **Try again**.
 
 The demo seed script does steps 1–2. To use **real Stripe in test mode**: remove the `STRIPE_API_BASE` line from `docker-compose.yml`, `docker compose up -d`, and put your `sk_test_…` key in the credential instead (never in `.env` or code). Test-mode refunds need a test payment whose metadata has the order number, e.g. `stripe payment_intents create --amount 5000 --currency usd --confirm --payment-method pm_card_visa -d "metadata[order_id]=NW-10211" -d "automatic_payment_methods[enabled]=true" -d "automatic_payment_methods[allow_redirects]=never"` with the Stripe CLI.
+
+### Try Shopify
+
+docker-compose points Shopify at a **fake Shopify** in the mocks service (`SHOPIFY_API_BASE=http://mocks:8100/shopify`). Any `….myshopify.com` domain works; the app's client ID is `demo-shopify-client` and its secret `demo-shopify-secret`. Order numbers like `#1006` exist (with made-up totals, delivery dates and days late); numbers containing `404` don't. Nothing leaves your machine.
+
+1. **Operations → Shopify:** domain `harbor-goods`, client ID and secret as above, **Connect** (→ *Connected to Harbor Goods*).
+2. **Test the lookup** with order number `#1006` and email `priya.raman@example.com`: the order is found and *Order email matches* is **Yes**. Try `#1013` with the same email: **No** (it's someone else's order).
+3. Submit a webform case with order number `1006` and that email. Its **Enrichment** card shows the Shopify order, and **Pipeline → Executions** shows step ①.
+4. Add a compensation rule on *Shopify: Days late*, set **Payouts** to the Shopify methods, and submit another case: the refund, store credit or discount code is issued on the fake store.
+
+The demo seed script creates all of this as *Harbor Goods (Shopify demo)*. To try a **real store**: remove the `SHOPIFY_API_BASE` line from `docker-compose.yml`, `docker compose up -d`, create a free development store in a Shopify Partner account, create an app in the Dev Dashboard with the scopes listed on the Shopify page, install it on the store, and connect with its client ID and secret (in the UI only: never in `.env`, code or chat).
 
 ### Try AI reply drafting
 

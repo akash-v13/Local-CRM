@@ -146,9 +146,11 @@ class CaseService:
         return case
 
     def continue_intake(self, case: Case, customer_texts: list[str] | None = None) -> None:
-        """The next intake step: enrichment if the business has connectors, else routing.
-        Does NOT commit."""
-        if self.connectors.has_active(case.tenant_id):
+        """The next intake step: enrichment if the business has connectors (or a connected
+        Shopify store), else routing. Does NOT commit."""
+        tenant = self.tenants.get(case.tenant_id)
+        shopify_on = tenant is not None and bool((tenant.shopify_settings or {}).get("enabled"))
+        if shopify_on or self.connectors.has_active(case.tenant_id):
             self._queue_enrichment(case, "system", None)
         else:
             texts = customer_texts or self.messages.customer_texts(case.tenant_id, case.id)

@@ -26,6 +26,9 @@ x-backend-env: &backend-env
   # Local development only: payouts go to the fake Stripe in the mocks service
   # (key sk_test_mock). Remove this line to use real Stripe with a sk_test_ key.
   STRIPE_API_BASE: http://mocks:8100/stripe
+  # Local development only: Shopify stores are the fake Shopify in the mocks service
+  # (client demo-shopify-client / demo-shopify-secret). Remove to use real stores.
+  SHOPIFY_API_BASE: http://mocks:8100/shopify
 
 services:
   db:

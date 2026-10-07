@@ -127,6 +127,18 @@ export const CREDENTIAL_TYPES: CredentialType[] = [
     ],
     secrets: null,
   },
+  {
+    kind: "shopify",
+    label: "Shopify store",
+    summary:
+      "Your Shopify store, through an app you create in Shopify's Dev Dashboard. Its client ID and secret are exchanged for a 24-hour access token, refreshed automatically. Easiest from Operations → Shopify.",
+    generatesToken: true,
+    config: [{ name: "shop", label: "Store domain", type: "code", defaultValue: "", required: true, hint: "e.g. northwind.myshopify.com" }],
+    secrets: [
+      { name: "client_id", label: "Client ID" },
+      { name: "client_secret", label: "Client secret" },
+    ],
+  },
 ];
 
 export function credentialType(kind: CredentialKind): CredentialType {
@@ -142,6 +154,8 @@ export function credentialDetail(kind: CredentialKind, config: Record<string, un
       return String(config.token_url ?? "");
     case "token_request":
       return `${String(config.method ?? "POST")} ${String(config.url ?? "")}`;
+    case "shopify":
+      return String(config.shop ?? "");
     default:
       return "";
   }

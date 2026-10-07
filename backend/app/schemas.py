@@ -426,6 +426,8 @@ class ConnectorConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check(self) -> "ConnectorConfig":
+        if self.key == "shopify":
+            raise ValueError("'shopify' is used by the built-in Shopify order lookup.")
         if not self.url_template.lower().startswith(("https://", "http://")):
             raise ValueError("URL must start with https:// (or http:// in local development).")
         for name in self.headers:
@@ -499,7 +501,9 @@ class EnrichRequest(BaseModel):
 # Credentials (shared authentication for connectors)
 # ---------------------------------------------------------------------------
 
-CredentialKind = Literal["api_key", "bearer", "basic", "oauth2_client_credentials", "token_request"]
+CredentialKind = Literal[
+    "api_key", "bearer", "basic", "oauth2_client_credentials", "token_request", "shopify"
+]
 
 # Secret fields each kind needs. token_request takes any named values instead.
 REQUIRED_SECRETS: dict[str, tuple[str, ...]] = {
@@ -508,6 +512,7 @@ REQUIRED_SECRETS: dict[str, tuple[str, ...]] = {
     "basic": ("username", "password"),
     "oauth2_client_credentials": ("client_id", "client_secret"),
     "token_request": (),
+    "shopify": (),  # client_id + client_secret, or access_token (checked below)
 }
 
 
@@ -528,6 +533,17 @@ class OAuth2Config(BaseModel):
     client_auth: Literal["body", "basic_header"] = Field(
         default="body",
         description="Send client id/secret in the form body, or as HTTP Basic auth.",
+    )
+
+
+class ShopifyConfig(BaseModel):
+    """A Shopify store. Secrets: the Dev Dashboard app's client_id + client_secret
+    (a 24-hour token is generated and refreshed automatically), or an access_token
+    from an app created in the Shopify admin before 2026."""
+
+    shop: str = Field(
+        pattern=r"^[a-zA-Z0-9][a-zA-Z0-9\-]*\.myshopify\.com$",
+        description='The store\'s myshopify.com domain, e.g. "northwind.myshopify.com".',
     )
 
 
@@ -582,6 +598,7 @@ CONFIG_MODELS: dict[str, type[BaseModel]] = {
     "basic": EmptyConfig,
     "oauth2_client_credentials": OAuth2Config,
     "token_request": TokenRequestConfig,
+    "shopify": ShopifyConfig,
 }
 
 
@@ -608,6 +625,13 @@ class CredentialWrite(BaseModel):
             missing = [k for k in REQUIRED_SECRETS[self.kind] if not self.secrets.get(k)]
             if missing:
                 raise ValueError(f"Missing secret value(s): {', '.join(missing)}.")
+            if self.kind == "shopify" and not (
+                self.secrets.get("access_token")
+                or (self.secrets.get("client_id") and self.secrets.get("client_secret"))
+            ):
+                raise ValueError(
+                    "Enter the Shopify app's client ID and client secret (or an access token)."
+                )
         return self
 
 
@@ -1137,6 +1161,10 @@ class PipelineRule(BaseModel):
 class PipelineDefinition(BaseModel):
     """What every new case goes through, in order, before an agent picks it up."""
 
+    shopify: dict[str, Any] | None = Field(
+        default=None,
+        description="Step ① when the store is connected: shop, order field, fields it saves.",
+    )
     reading: dict[str, Any] | None = Field(
         default=None,
         description="Step 0 when on: channels, model (jev / claude / patterns), fields, category.",
@@ -1355,12 +1383,26 @@ class CategoryChange(BaseModel):
 
 # ----- payouts (issuing compensation) -------------------------------------------------------
 
-PayoutMethod = Literal["stripe_refund", "stripe_credit", "stripe_voucher", "manual"]
+PayoutMethod = Literal[
+    "stripe_refund",
+    "stripe_credit",
+    "stripe_voucher",
+    "shopify_refund",
+    "shopify_credit",
+    "shopify_discount",
+    "manual",
+]
 # Which methods make sense for each compensation type.
 ALLOWED_METHODS: dict[str, set[str]] = {
-    "refund": {"stripe_refund", "manual"},
-    "store_credit": {"stripe_credit", "stripe_voucher", "manual"},
-    "voucher": {"stripe_voucher", "manual"},
+    "refund": {"stripe_refund", "shopify_refund", "manual"},
+    "store_credit": {
+        "stripe_credit",
+        "stripe_voucher",
+        "shopify_credit",
+        "shopify_discount",
+        "manual",
+    },
+    "voucher": {"stripe_voucher", "shopify_discount", "manual"},
     "points": {"manual"},
     "replacement": {"manual"},
 }
@@ -1406,9 +1448,85 @@ class PayoutSettingsData(BaseModel):
         for path in (self.payment_field, self.order_field):
             if path and not is_known_field(path):
                 raise ValueError(f"Unknown field '{path}'.")
-        if self.enabled and self.credential_id is None:
-            raise ValueError("Choose the Stripe credential before turning payouts on.")
+        uses_stripe = any(m.startswith("stripe_") for m in self.methods.values())
+        if self.enabled and uses_stripe and self.credential_id is None:
+            raise ValueError(
+                "Choose the Stripe credential, or issue these types through Shopify or by hand."
+            )
         return self
+
+
+# ----- Shopify ------------------------------------------------------------------------------
+
+
+class ShopifySettingsData(BaseModel):
+    """The business's Shopify store: order lookup on new cases, and issuing compensation."""
+
+    enabled: bool = False
+    credential_id: uuid.UUID | None = Field(
+        default=None, description="A 'Shopify' credential (shop domain + app client ID/secret)."
+    )
+    order_field: str = Field(
+        default="attributes.orderNumber",
+        description="The case field with the order number the customer gave.",
+    )
+    match_by_email: bool = Field(
+        default=True,
+        description="No order number on the case: use the customer's latest order, by email.",
+    )
+    notify_customer: bool = Field(
+        default=True, description="Shopify emails the customer about refunds and store credit."
+    )
+    store_credit_expiry_days: int | None = Field(default=None, ge=1, le=1825)
+
+    @model_validator(mode="after")
+    def _check(self) -> "ShopifySettingsData":
+        if not is_known_field(self.order_field):
+            raise ValueError(f"Unknown field '{self.order_field}'.")
+        if self.enabled and self.credential_id is None:
+            raise ValueError("Connect the store (choose its Shopify credential) first.")
+        return self
+
+
+class ShopifyConnectRequest(BaseModel):
+    """Connect a store in one step: creates (or updates) its Shopify credential."""
+
+    shop: str = Field(
+        pattern=r"^[a-zA-Z0-9][a-zA-Z0-9\-]*\.myshopify\.com$",
+        description='e.g. "northwind.myshopify.com"',
+    )
+    client_id: str = Field(min_length=1, max_length=200)
+    client_secret: str = Field(min_length=1, max_length=500)
+
+
+class ShopifyCheckResult(BaseModel):
+    ok: bool
+    shop_name: str | None = None
+    currency: str | None = None
+    detail: str
+
+
+class ShopifyLookupRequest(BaseModel):
+    """Look an order up with the saved settings: for a case, or an order number / email."""
+
+    case_number: int | None = None
+    order_number: str | None = Field(default=None, max_length=100)
+    email: str | None = Field(default=None, max_length=320)
+
+
+class ShopifyLookupResult(BaseModel):
+    status: Literal["ok", "failed", "skipped"]
+    fields: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+    searched: list[str] = Field(default_factory=list, description="The searches made.")
+    duration_ms: int | None = None
+    admin_url: str | None = Field(default=None, description="The order in the Shopify admin.")
+
+
+class ShopifyInfo(BaseModel):
+    settings: ShopifySettingsData
+    shop: str | None = Field(default=None, description="The connected store's domain.")
+    fields: dict[str, str] = Field(description="Fields a lookup saves: key -> label.")
 
 
 class PayoutRead(BaseModel):

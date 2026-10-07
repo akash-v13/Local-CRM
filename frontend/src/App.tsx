@@ -20,6 +20,7 @@ import { PipelineExecutionPage } from "./pages/ops/PipelineExecutionPage";
 import { PipelineExecutionsPage, PipelinePage } from "./pages/ops/PipelinePage";
 import { PayoutsPage } from "./pages/ops/PayoutsPage";
 import { ReadingPage } from "./pages/ops/ReadingPage";
+import { ShopifyPage } from "./pages/ops/ShopifyPage";
 import { PromptTemplateEditorPage } from "./pages/ops/PromptTemplateEditorPage";
 import { PromptTemplateListPage } from "./pages/ops/PromptTemplateListPage";
 import { SampleCaseEditorPage } from "./pages/ops/SampleCaseEditorPage";
@@ -41,7 +42,8 @@ import { WebformPage } from "./pages/WebformPage";
  *   /ops/reading                  Operations Portal: what to read from customers' messages
  *   /ops/pipeline[/executions[/:caseNumber]]  Operations Portal: intake pipeline diagram + per-case runs
  *   /ops/compensation[/new|/:id]  Operations Portal: compensation rules, guardrails, backtest
- *   /ops/payouts                  Operations Portal: issuing approved compensation through Stripe
+ *   /ops/payouts                  Operations Portal: issuing approved compensation (Stripe, Shopify)
+ *   /ops/shopify                  Operations Portal: the business's Shopify store (order lookup)
  *   /ops/templates[/<name>]       Operations Portal: Jinja prompt templates (+ preview, test lab, costs)
  *   /ops/samples[/new|/:id]       Operations Portal: sample cases for the test lab
  */
@@ -65,6 +67,7 @@ export function App() {
               <Route path="email/:mailboxId" element={<MailboxEditorPage />} />
               <Route path="reading" element={<ReadingPage />} />
               <Route path="payouts" element={<PayoutsPage />} />
+              <Route path="shopify" element={<ShopifyPage />} />
               <Route path="pipeline" element={<PipelinePage />} />
               <Route path="pipeline/executions" element={<PipelineExecutionsPage />} />
               <Route path="pipeline/executions/:caseNumber" element={<PipelineExecutionPage />} />

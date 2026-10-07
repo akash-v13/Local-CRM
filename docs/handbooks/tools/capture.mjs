@@ -193,6 +193,31 @@ await shot("pipeline-execution-reading", page, { fullPage: true });
 await open("/ops/samples", "Late gift");
 await shot("samples");
 
+// ----- Shopify (the "Harbor Goods (Shopify demo …)" store) ----------------------------------
+const harbor = (await get("/tenants")).filter((t) => t.name.startsWith("Harbor Goods (Shopify demo")).at(-1);
+if (harbor) {
+  await page.evaluate((id) => localStorage.setItem("resolve.tenantId", id), harbor.id);
+  await page.addInitScript((id) => localStorage.setItem("resolve.tenantId", id), harbor.id);
+  const harborCases = await get(`/tenants/${harbor.id}/cases`);
+  const byEmail = (email, nth = 0) => harborCases.filter((c) => c.customer.email === email).at(-1 - nth).case_number;
+  const priyaLate = byEmail("priya.raman@example.com");
+  await open("/ops/shopify", "Test the lookup");
+  await page.getByLabel("Pick a case (or enter an order below)").selectOption(String(priyaLate));
+  await page.getByRole("button", { name: "Look up" }).click();
+  await page.getByText("Open the order in Shopify").waitFor();
+  await shot("shopify", page, { fullPage: true });
+  await open(`/cases/${priyaLate}`, "Conversation");
+  await shot("shopify-case-enrichment", card("Enrichment"));
+  await shot("shopify-case-refund", card("Compensation"));
+  await open(`/cases/${byEmail("jin.park@example.com")}`, "Conversation");
+  await shot("shopify-case-discount", card("Compensation"));
+  await open(`/ops/pipeline/executions/${priyaLate}`, "Ready for an agent");
+  await page.getByText("Shopify order", { exact: true }).first().click();
+  await shot("shopify-pipeline-execution", page, { fullPage: true });
+} else {
+  console.log("– no Shopify demo store: skipped the Shopify screenshots");
+}
+
 // ----- developers ----------------------------------------------------------------------------
 await page.goto(`${API}/docs`);
 await page.getByText("compensation", { exact: false }).first().waitFor();

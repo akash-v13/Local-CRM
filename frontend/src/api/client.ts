@@ -24,6 +24,10 @@ import type {
   Payout,
   PayoutListRow,
   PayoutSettings,
+  ShopifyCheckResult,
+  ShopifyInfo,
+  ShopifyLookupResult,
+  ShopifySettings,
   StripeCheckResult,
   CostProjection,
   ReadingInfo,
@@ -272,6 +276,15 @@ export const api = {
     request<Payout[]>(`/tenants/${tenantId}/cases/${caseNumber}/payouts`),
   payNow: (tenantId: string, caseNumber: number, actorId: string) =>
     post<Payout>(`/tenants/${tenantId}/cases/${caseNumber}/payouts`, { actor_id: actorId }),
+
+  // Shopify (order lookup, and issuing compensation on the store)
+  getShopify: (tenantId: string) => request<ShopifyInfo>(`/tenants/${tenantId}/shopify`),
+  saveShopify: (tenantId: string, settings: ShopifySettings) => put<ShopifyInfo>(`/tenants/${tenantId}/shopify`, settings),
+  connectShopify: (tenantId: string, input: { shop: string; client_id: string; client_secret: string }) =>
+    post<ShopifyCheckResult>(`/tenants/${tenantId}/shopify/connect`, input),
+  checkShopify: (tenantId: string) => post<ShopifyCheckResult>(`/tenants/${tenantId}/shopify/check`, {}),
+  lookupShopify: (tenantId: string, input: { case_number?: number; order_number?: string; email?: string }) =>
+    post<ShopifyLookupResult>(`/tenants/${tenantId}/shopify/lookup`, input),
 
   // AI reply drafting
   aiModels: () => request<ModelOption[]>("/ai/models"),

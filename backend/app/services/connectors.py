@@ -38,6 +38,7 @@ def run_settings(settings: Settings, resolve: Resolver) -> RunSettings:
         allowed_hosts=settings.connector_allowed_hosts,
         max_response_bytes=settings.connector_max_response_bytes,
         resolve=resolve,
+        shopify_api_base=settings.shopify_api_base,
     )
 
 

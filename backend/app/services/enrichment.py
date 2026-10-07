@@ -9,6 +9,8 @@ database connection is held while waiting on external APIs:
 2. Call  (no long session): run each connector in `run_order`. Later
                            connectors can use fields fetched by earlier ones.
                            (Token caching opens its own brief sessions.)
+   When the business's Shopify store is connected, its order lookup runs first
+   (services/shopify.py), so connectors can use {{enrichment.shopify.<field>}}.
 3. Write (short session):  store results, record an event, then route the case,
                            or move it to EnrichmentFailed if a *required*
                            connector failed. Retried if someone else saved the
@@ -31,14 +33,15 @@ from app.connectors.auth import AuthProvider
 from app.connectors.context import contexts_for
 from app.connectors.runner import run_connector
 from app.domain.lifecycle import CaseStatus
-from app.models import Case, CaseEvent, Connector, Job
+from app.models import Case, CaseEvent, Connector, Job, Tenant
 from app.models.base import utcnow
 from app.repositories import ConnectorRepository, JobRepository, MessageRepository
 from app.schemas import ConnectorConfig, ConnectorRunResult
 from app.security.ssrf import Resolver
 from app.services.cases import CaseService
 from app.services.connectors import auth_source, run_settings
-from app.services.routing import enrichment_data
+from app.services.routing import case_context, enrichment_data
+from app.services.shopify import STEP_KEY, STEP_NAME, client_for, lookup_order, shopify_step
 
 WRITE_ATTEMPTS = 3
 
@@ -52,7 +55,12 @@ class _PreparedConnector:
 
 @dataclass
 class _Outcome:
-    connector: _PreparedConnector
+    """One step's result: a connector, or the built-in Shopify lookup (id None)."""
+
+    key: str
+    name: str
+    id: uuid.UUID | None
+    required: bool
     result: ConnectorRunResult
 
 
@@ -91,18 +99,52 @@ class EnrichmentService:
             texts = MessageRepository(session).customer_texts(case.tenant_id, case.id)
             connectors = ConnectorRepository(session).list(case.tenant_id, active_only=True)
             prepared = [_prepare(c) for c in connectors]
+            tenant = session.get(Tenant, case.tenant_id)
+            shopify = shopify_step(session, tenant) if tenant else None
+            order_number = (
+                case_context(case, texts).get(shopify[0].order_field) if shopify else None
+            )
+            email = case.customer.email
         # Session closed: `case` is detached but its loaded fields remain readable.
 
         # ---- 2. Call ------------------------------------------------------------------
         gathered = enrichment_data(case)
         outcomes: list[_Outcome] = []
+
+        def keep(outcome: _Outcome) -> None:
+            if outcome.result.status == "ok":
+                gathered[outcome.key] = outcome.result.data  # later steps can use it
+            else:
+                gathered.pop(outcome.key, None)  # don't route on stale data
+            outcomes.append(outcome)
+
+        if shopify is not None:
+            settings, credential = shopify
+            client = client_for(
+                self.session_factory,
+                self.client,
+                run_settings(self.settings, self.resolve),
+                credential,
+            )
+            found = lookup_order(client, settings, order_number=order_number, email=email)
+            result = ConnectorRunResult(
+                status=found.status,
+                error=found.error,
+                duration_ms=found.duration_ms,
+                data=found.fields,
+            )
+            keep(_Outcome(STEP_KEY, STEP_NAME, None, False, result))
         for connector in prepared:
             result = self._run_one(connector, case, texts, gathered)
-            if result.status == "ok":
-                gathered[connector.config.key] = result.data
-            else:
-                gathered.pop(connector.config.key, None)  # don't route on stale data
-            outcomes.append(_Outcome(connector, result))
+            keep(
+                _Outcome(
+                    connector.config.key,
+                    connector.name,
+                    connector.id,
+                    connector.config.required,
+                    result,
+                )
+            )
 
         # ---- 3. Write -----------------------------------------------------------------
         for attempt in range(1, WRITE_ATTEMPTS + 1):
@@ -151,10 +193,10 @@ class EnrichmentService:
             case.enrichment = {
                 **case.enrichment,
                 **{
-                    o.connector.config.key: {
+                    o.key: {
                         **o.result.model_dump(mode="json"),
-                        "connectorId": str(o.connector.id),
-                        "connectorName": o.connector.name,
+                        "connectorId": str(o.id) if o.id else None,
+                        "connectorName": o.name,
                         "fetchedAt": fetched_at,
                         # JSONB doesn't keep key order; this does (connector run order).
                         "position": position,
@@ -171,8 +213,8 @@ class EnrichmentService:
                     data={
                         "connectors": [
                             {
-                                "key": o.connector.config.key,
-                                "name": o.connector.name,
+                                "key": o.key,
+                                "name": o.name,
                                 "status": o.result.status,
                                 "error": o.result.error,
                                 "durationMs": o.result.duration_ms,
@@ -186,9 +228,7 @@ class EnrichmentService:
             service = CaseService(session)
             if CaseStatus(case.status) is CaseStatus.INTAKE:
                 failed_required = [
-                    o.connector.name
-                    for o in outcomes
-                    if o.connector.config.required and o.result.status != "ok"
+                    o.name for o in outcomes if o.required and o.result.status != "ok"
                 ]
                 if failed_required:
                     service.apply_transition(
