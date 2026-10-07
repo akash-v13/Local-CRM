@@ -1,12 +1,13 @@
 /**
  * Turns the intake pipeline (or one case's run through it) into diagram nodes:
  *
- *   Case received → ① connector → ② connector → … → Routing → Compensation → Agent
+ *   Case received → ① connector → ② connector → … → Routing → Compensation (→ Stripe) → Agent
  *
  * Steps run one after another. `uses` links a step to the earlier steps whose
  * data its request needs (from {{enrichment.<key>.<field>}} placeholders).
  */
 import type { ExecutionDetail, PipelineDefinition, StepStatus } from "../api/types";
+import { PAYOUT_STATUS_LABELS } from "./payouts";
 
 export type NodeKind = "start" | "reader" | "connector" | "routing" | "compensation" | "end";
 /** "done" = a non-connector stage that happened; "waiting" = not reached yet. */
@@ -132,7 +133,10 @@ export function definitionNodes(d: PipelineDefinition): FlowNode[] {
       kind: "compensation",
       title: "Compensation",
       subtitle: d.compensation_rules.length ? "First matching rule decides" : "No rules: no decision is made",
-      facts: d.compensation_rules.map((r) => `${r.name} → ${r.outcome}`),
+      facts: [
+        ...d.compensation_rules.map((r) => `${r.name} → ${r.outcome}`),
+        ...(d.payouts ? [`Approved: issued through Stripe${d.payouts.auto_pay ? " automatically" : " when an agent clicks Issue"}`] : []),
+      ],
       uses: [],
       problems: [],
     },
@@ -200,7 +204,12 @@ export function executionNodes(d: PipelineDefinition, e: ExecutionDetail): FlowN
       facts: decision
         ? decision.status === "no_match"
           ? ["No rule matched"]
-          : [decision.label ?? "No compensation", ...(decision.rule_name ? [`Rule: ${decision.rule_name}`] : []), statusText(decision.status)]
+          : [
+              decision.label ?? "No compensation",
+              ...(decision.rule_name ? [`Rule: ${decision.rule_name}`] : []),
+              statusText(decision.status),
+              ...(decision.payout ? [`Stripe: ${PAYOUT_STATUS_LABELS[decision.payout.status].toLowerCase()}`] : []),
+            ]
         : [routed ? "No rules when this case was routed" : "Not reached"],
       problems: [],
     },

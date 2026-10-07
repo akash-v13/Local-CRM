@@ -149,7 +149,8 @@ sequenceDiagram
 | Intake pipeline view | `services/pipeline.py` (definition, dependencies from placeholders, executions from stored results), `api/pipeline.py` | `PipelinePage` (+ Executions), `PipelineExecutionPage`, `PipelineDiagram`, `lib/pipeline.ts` | `test_pipeline`, `lib/pipeline.test.ts` | [§13](../dev/codebase-guide.md#13-intake-pipeline-view), [Integration guide](integration-guide.md) |
 | Email channel | `app/email/` (parse, transport), `services/email.py`, `api/mailboxes.py`, `models/mailbox.py`, worker jobs `poll_mailbox` / `send_email` | `MailboxListPage`, `MailboxEditorPage`, `MessageThread` (subject, delivery, Retry), `lib/mailProviders.ts` | `test_email`, `MessageThread.test` | [§14](../dev/codebase-guide.md#14-email-channel) |
 | Reading messages | `app/ai/reading.py`, `app/ai/readers.py` (Jev, Claude), `services/reading.py`, `api/reading.py`, worker job `read_case` | `ReadingPage`, `ReadingCard`, pipeline step ⓪ | `test_reading`, `ReadingCard.test` | [§15](../dev/codebase-guide.md#15-reading-messages) |
-| Demo data | `scripts/seed_demo.py`, `mocks/shop.py` (orders, shipments, loyalty) | — | (runs the whole flow) | this handbook |
+| Payouts (Stripe) | `app/payouts/stripe.py`, `services/payouts.py`, `api/payouts.py`, `models/payout.py`, worker job `issue_payout` | `PayoutsPage`, `CompensationCard` (payout line), `lib/payouts.ts` | `test_payouts`, `CompensationCard.test`, `lib/payouts.test.ts` | [§16](../dev/codebase-guide.md#16-payouts-stripe) |
+| Demo data | `scripts/seed_demo.py`, `mocks/shop.py` (orders, shipments, loyalty, fake Stripe) | — | (runs the whole flow) | this handbook |
 
 ---
 
@@ -163,6 +164,7 @@ These rules protect customer data and money.
 | **The AI never decides money.** | Compensation comes from `domain/compensation.py`; drafts only see *approved* compensation (`approved_compensation`). | Don't let model output change decisions, amounts or statuses. |
 | **The model never sees raw PII.** | `ai/pii.py` masks before rendering and unmasks after. Templates only receive the masked context. | New template variables go through `ai/context.py` and `_mask`. |
 | **Customer text is data, not instructions.** | Locked platform rules (`ai/templates/_platform/`); templates are rendered in a sandbox and can't include other files. | Never let business templates or customer text change the platform layer. |
+| **Never pay twice; never hold money.** | Each approved decision gets one idempotency key (`queue_payout`); Stripe replays repeated requests; after a 5xx we look for our own object before using a new key. Money moves only inside the business's Stripe account. | Never call Stripe outside `services/payouts.py`. Never reuse a key with different parameters. Add a retry test in `test_payouts.py` for any new method. |
 | **Secrets stay secret.** | Credentials are encrypted with Fernet and write-only through the API. Keys come from the environment. | Never log secrets. Never put keys in code, `docker-compose.yml` or anything committed. `.env` is git-ignored. |
 | **No calls to internal networks.** | `security/ssrf.py` checks every connector and credential URL. | Use the connector runner; don't make raw HTTP calls to user-supplied URLs. |
 | **Every change is auditable.** | Services write a `CaseEvent` in the same transaction. | New case operations need an event with actor and reason. |
@@ -208,7 +210,7 @@ These rules protect customer data and money.
 3. **Route:** add it in `api/<area>.py`. Keep it to about three lines: parse, call the service, return.
 4. **New router?** Include it in `main.py`. New error type? Add it to `domain/errors.py` and `ERROR_STATUS_CODES`.
 5. **Tests:** cover the happy path, a 404 for another tenant, and validation (422).
-6. **Docs:** add a row to the endpoint table ([Codebase §16](../dev/codebase-guide.md#16-api-endpoints)).
+6. **Docs:** add a row to the endpoint table ([Codebase §17](../dev/codebase-guide.md#17-api-endpoints)).
 
 The full worked example is in [Codebase §4](../dev/codebase-guide.md#4-adding-a-feature-worked-example).
 

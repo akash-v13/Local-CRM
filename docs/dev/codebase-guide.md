@@ -88,7 +88,7 @@ Say we want **"reroute a case to another queue"** (Idea 8: manual reroute that p
 | Piece | Where it will go |
 |---|---|
 | Authentication / tenant from token | `api/` dependency replacing the `tenant_id` path parameter |
-| Payouts (issuing compensation) | payout connectors with idempotency keys; the matrix already decides what to pay |
+| Cash payouts (PayPal / Wise / Tremendous) | another provider next to `app/payouts/stripe.py`; `Payout.provider` and `PayoutMethod` already allow it |
 | Inbox OAuth (Google Workspace, Microsoft 365) | an OAuth credential type for `ImapSmtpTransport` (XOAUTH2) |
 | SLA timers, approvals, AI auto-send | settings already saved on queues; enforcement not built |
 | AI recategorization | Idea 8 in the product ideas log |
@@ -302,7 +302,35 @@ flowchart LR
 | Review | `ReadingService.confirm_field / change_category` | Agents pick the right candidate or apply a suggested category (`reading.field_confirmed`, `case.recategorized`). |
 | Settings | `tenants.reading_settings` | Enabled, channels, read category, min confidence, fields (key, label, description, pattern). |
 
-## 16. API endpoints
+## 16. Payouts (Stripe)
+
+Issuing **approved** compensation through the business's own Stripe account. Local CRM never holds or moves money itself: it asks Stripe, once per decision, and records the answer.
+
+```mermaid
+flowchart LR
+    Approved["Decision approved<br/>(rule or reviewer)"] --> Queue["queue_payout<br/>Payout row + issue_payout job"]
+    Agent["Agent: Issue / Try again"] --> Queue
+    Queue --> Worker["issue_payout_job<br/>(no DB session during the call)"]
+    Worker --> Stripe["Stripe: refund / balance credit /<br/>coupon + promotion code"]
+    Stripe -- ok --> Done["succeeded: label rewritten,<br/>voucher code on the decision"]
+    Stripe -- "network / 429 / 5xx" --> Retry["retrying (backoff, 5 attempts)"]
+    Stripe -- "4xx / not found" --> Failed["failed: reason on the case"]
+```
+
+| Piece | Where | Notes |
+|---|---|---|
+| Stripe client | `app/payouts/stripe.py` | Raw HTTP, form-encoded, `Authorization: Bearer sk_…`, an `Idempotency-Key` on every POST. `to_minor` handles zero-decimal currencies. `StripeError.retryable` (network, 429, 5xx) and `outcome_unknown` (5xx). Lookups used to reconcile: `find_refund`, `find_credit`, `find_promotion_code` (by `metadata[payout_id]` or code). |
+| Model | `app/models/payout.py`, migration 0009 | One row per attempt round: kind, method, amount, currency, status (queued → processing → succeeded / retrying / failed), `idempotency_key` (unique), Stripe `external_id`, `details` (code, customer, payment_intent, mode), error, attempts. `tenants.payout_settings` holds the settings. |
+| Queueing | `services/payouts.queue_payout` | Called by `CompensationService` when a decision is approved (`decide_for_case`, `review`) and by `PayoutService.pay_now`. Key: `lcrm:{case.id}:{decided_at}`. An existing non-failed payout for the same decision blocks another; after a failure a new round gets `…:retry{n}` (Stripe replays errors for the same key, so a fixed problem needs a new key). |
+| Issuing | `services/payouts.issue_payout_job` | Worker handler. Phase 1 loads and marks processing; phase 2 calls Stripe with no DB session; phase 3 records the result. After a 5xx (outcome unknown) the next attempt first looks for its own object by `metadata[payout_id]`, then uses a new key `…:u{n}`. Retryable errors re-raise so the job queue backs off; others fail the payout. `payout_gave_up` handles a job that ran out of attempts. |
+| Methods | `schemas.ALLOWED_METHODS` | refund → `stripe_refund`; store credit → `stripe_credit` (customer balance, invoices only) or `stripe_voucher`; voucher → `stripe_voucher`; points / replacement → manual. |
+| Finding the payment | `PayoutSettingsData` | `payment_field` (a case field holding `pi_…`) first, else search PaymentIntents where `metadata[metadata_key]` = `order_field`. The refund's currency must match the payment's. |
+| On the case | `decisions.compensation.payout` | `{id, status, method, external_id, code, error}`; on success the decision label becomes e.g. "Voucher code SORRY-7KQ2-M9XA worth USD 15.00 (single use, valid until …)", which AI drafts quote. Events: `payout.queued`, `payout.succeeded`, `payout.failed`. |
+| Local demo | `mocks/shop.py` `/stripe/v1/…` | A fake Stripe (key `sk_test_mock`) with idempotency replay. Docker sets `STRIPE_API_BASE=http://mocks:8100/stripe`; remove it to use real Stripe with a test key. |
+
+Tests: `tests/test_payouts.py` uses a fake Stripe that replays idempotent requests like the real one, and drops the network or returns 429/500 (before or after doing the work) to prove a payout is never made twice.
+
+## 17. API endpoints
 
 Full, always-current reference: http://localhost:8000/docs.
 
@@ -360,6 +388,10 @@ Full, always-current reference: http://localhost:8000/docs.
 | POST | `/tenants/{t}/reading/preview` | Read a pasted message or a case with saved or unsaved settings (nothing saved) |
 | POST | `/tenants/{t}/cases/{c}/extraction/fields/{key}` | Agent sets a field the reader wasn't sure about |
 | POST | `/tenants/{t}/cases/{c}/category` | Agent sets the case's category |
+| GET, PUT | `/tenants/{t}/payouts/settings` | Payout settings (Stripe credential, method per type, payment lookup, vouchers) |
+| POST | `/tenants/{t}/payouts/check-stripe` | Sign in to Stripe with a credential: valid key? test or live? |
+| GET | `/tenants/{t}/payouts?status=` | Recent payouts, newest first |
+| GET, POST | `/tenants/{t}/cases/{c}/payouts` | A case's payouts / issue its approved compensation now (or retry after a failure; never pays twice) |
 | GET | `/tenants/{t}/pipeline` | The intake pipeline: steps in order, dependencies, problems, queues, rules |
 | GET | `/tenants/{t}/pipeline/executions?outcome=&limit=` | Recent cases' runs (per-step status, time, queue, compensation) |
 | GET | `/tenants/{t}/pipeline/executions/{c}` | One case's run with requests, data, routing and compensation |

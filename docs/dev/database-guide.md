@@ -14,9 +14,10 @@ Written for someone who knows DocumentDB/MongoDB and is new to Postgres, SQLAlch
 | `mailboxes` | Linked email inboxes (IMAP/SMTP) | Password encrypted; IMAP position (`uid_validity`, `last_uid`) and status |
 | `case_events` | Audit trail | Append-only |
 | `compensation_rules` | The compensation matrix: conditions + outcome per rule | Decisions live on the case in `decisions.compensation`; guardrails in `tenants.compensation_settings` |
+| `payouts` | Compensation issued through Stripe: one row per attempt round, with status, Stripe id and error | `idempotency_key` is unique, so one decision can't be paid twice; settings in `tenants.payout_settings` |
 | `connectors` | API calls that enrich cases | Request, auth, field mapping, conditions |
 | `credentials` | Shared auth for connectors | Secrets encrypted; generated tokens cached |
-| `jobs` | Background work (enrichment, template tests) | Picked up with `FOR UPDATE SKIP LOCKED` |
+| `jobs` | Background work (reading, enrichment, email, payouts, template tests) | Picked up with `FOR UPDATE SKIP LOCKED` |
 | `prompt_templates` / `prompt_template_versions` | Jinja prompt templates and their immutable versions | One row per name per tenant |
 | `sample_cases` | Test-lab inputs | |
 | `template_test_runs` | Test-lab runs and results | Results added as each draft finishes |

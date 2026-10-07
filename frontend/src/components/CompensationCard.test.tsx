@@ -1,10 +1,10 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../api/client";
-import type { CompensationDecision } from "../api/types";
+import type { CompensationDecision, PayoutSettings } from "../api/types";
 import { makeCase } from "../test/fixtures";
 import { CompensationCard } from "./CompensationCard";
 
@@ -16,6 +16,8 @@ vi.mock("../api/client", async (importOriginal) => {
       ...actual.api,
       reviewCompensation: vi.fn().mockResolvedValue({}),
       decideCompensation: vi.fn().mockResolvedValue({}),
+      payoutSettings: vi.fn(),
+      payNow: vi.fn().mockResolvedValue({}),
     },
   };
 });
@@ -39,6 +41,19 @@ const PENDING: CompensationDecision = {
   review_note: null,
 };
 
+const PAYOUTS: PayoutSettings = {
+  enabled: true,
+  credential_id: "cred-1",
+  auto_pay: false,
+  methods: { refund: "stripe_refund", store_credit: "stripe_credit", voucher: "stripe_voucher" },
+  payment_field: null,
+  metadata_key: "order_id",
+  order_field: "attributes.orderNumber",
+  voucher_prefix: "SORRY",
+  voucher_expiry_days: 90,
+};
+const APPROVED: CompensationDecision = { ...PENDING, status: "approved", approval_reasons: [], reviewed_by: "mgr.sam" };
+
 function renderCard(decision?: CompensationDecision, onChanged = vi.fn()) {
   const c = makeCase({ decisions: decision ? { compensation: decision } : {} });
   render(
@@ -50,6 +65,10 @@ function renderCard(decision?: CompensationDecision, onChanged = vi.fn()) {
 }
 
 describe("CompensationCard", () => {
+  beforeEach(() => {
+    vi.mocked(api.payoutSettings).mockResolvedValue(PAYOUTS);
+  });
+
   it("explains a pending decision and approves it as the current agent", async () => {
     const user = userEvent.setup();
     const { c, onChanged } = renderCard(PENDING);
@@ -83,5 +102,41 @@ describe("CompensationCard", () => {
   it("offers to decide when there's no decision yet", () => {
     renderCard(undefined);
     expect(screen.getByRole("button", { name: "Decide now" })).toBeInTheDocument();
+  });
+
+  it("issues approved compensation through Stripe when automatic payouts are off", async () => {
+    const user = userEvent.setup();
+    const { c, onChanged } = renderCard(APPROVED);
+    await user.click(await screen.findByRole("button", { name: "Issue stripe refund" }));
+    expect(api.payNow).toHaveBeenCalledWith(c.tenant_id, c.case_number, "mgr.sam");
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it("shows an issued voucher code", () => {
+    renderCard({
+      ...APPROVED,
+      type: "voucher",
+      payout: { id: "p1", status: "succeeded", method: "stripe_voucher", external_id: "promo_1", code: "SORRY-7KQ2-M9XA", error: null },
+    });
+    expect(screen.getByText("Issued")).toBeInTheDocument();
+    expect(screen.getByText("SORRY-7KQ2-M9XA")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
+
+  it("explains a failed payout and offers to try again", async () => {
+    const user = userEvent.setup();
+    const { c } = renderCard({
+      ...APPROVED,
+      payout: { id: "p1", status: "failed", method: "stripe_refund", external_id: null, code: null, error: "Couldn't find the Stripe payment for order NW-10404." },
+    });
+    expect(screen.getByText(/Couldn't find the Stripe payment/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(api.payNow).toHaveBeenCalledWith(c.tenant_id, c.case_number, "mgr.sam");
+  });
+
+  it("points to Payouts when the type is issued by hand", async () => {
+    vi.mocked(api.payoutSettings).mockResolvedValue({ ...PAYOUTS, enabled: false });
+    renderCard(APPROVED);
+    expect(await screen.findByText(/Issue this by hand/)).toBeInTheDocument();
   });
 });

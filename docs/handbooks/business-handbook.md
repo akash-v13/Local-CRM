@@ -40,6 +40,7 @@ Every screenshot uses a made-up demo shop called *Northwind Outfitters*. Ask who
 - [B6. Testing AI before you change anything](#b6-testing-ai-before-you-change-anything)
 - [B7. Connecting your email inbox](#b7-connecting-your-email-inbox)
 - [B8. Reading messages](#b8-reading-messages)
+- [B9. Payouts: issuing compensation through Stripe](#b9-payouts-issuing-compensation-through-stripe)
 
 **Part C: Recipes and reference**
 
@@ -238,7 +239,13 @@ When a case is routed, your business's **compensation rules** decide what the cu
 - **Reject:** type a reason first, then click Reject. Nothing is offered.
 - **Decide again:** re-runs the rules, e.g. after order data arrived or the rules changed. Not possible once a decision has been approved or rejected.
 
-> Approving records the decision. **Paying** the customer isn't automated yet (see [C4](#c4-whats-not-built-yet)).
+**Paying it.** If your business issues compensation through Stripe ([B9](#b9-payouts-issuing-compensation-through-stripe)), the bottom of the card shows how that went:
+- **Issued** · *Stripe refund* · `re_…`: done. A voucher shows its **code**, and AI drafts quote it.
+- **Issuing… / Retrying:** Stripe is being asked, or didn't answer cleanly and will be asked again. It can't be paid twice.
+- **Failed**, with the reason (e.g. *Couldn't find the Stripe payment for order NW-10404*). Fix the cause, then click **Try again**.
+- **Issue stripe refund** (or credit / voucher): your business issues payouts only when an agent clicks. Click once; it can't be paid twice.
+
+If the card says *Issue this by hand*, this type isn't issued through Stripe: give it the usual way.
 
 ## A6. Moving a case to another queue
 
@@ -541,6 +548,38 @@ In **Pipeline → Executions**, this is step **⓪ Read the message**, with the 
 
 **Which model reads?** *Jev* (TypeSafe AI's decision model) when your administrator has set a TypeSafe key: about $0.00004 a message, in a fraction of a second. Otherwise *Claude*, about $0.001 a message. With neither key, a field is filled only when exactly one match is found, and no category is chosen. Personal details (names, email addresses, phone numbers) are hidden from the model.
 
+## B9. Payouts: issuing compensation through Stripe
+
+Under **Operations → Payouts**, approved compensation can be issued through **your own Stripe account**: no copying amounts into Stripe by hand. Local CRM never holds your money; Stripe moves it from your account, and every payout shows up in your Stripe dashboard.
+
+![Payouts settings and recent payouts](images/payouts.png)
+
+**What can be issued:**
+
+| Compensation type | Can be issued as |
+|---|---|
+| Refund | **Refund the payment**: back to the card or account the customer paid with |
+| Store credit | **Balance credit** on the customer's Stripe balance (used on their next invoice, so subscriptions and invoices only), or a **voucher code** |
+| Voucher | **Voucher code**: a single-use Stripe promotion code for their next checkout |
+| Loyalty points, replacement | **By hand** (outside Local CRM) |
+
+Stripe can't send cash to a customer's bank account. That needs a different provider and isn't built yet.
+
+**To set it up:**
+1. In Stripe, copy a **secret key**. Start with a test key (`sk_test_…`) and switch to a live key (`sk_live_…`) when you're happy. A restricted key works if it can write Refunds, Customers, Coupons and Promotion codes.
+2. **Operations → Credentials → New credential**, type **Bearer token**, paste the key. It's encrypted and never shown again.
+3. **Operations → Payouts:** tick **Issue compensation through Stripe**, choose the credential and click **Check Stripe**. It says whether the key works and whether it's **test** or **live** (real money).
+4. **How each type is issued:** pick a method per compensation type.
+5. **Finding the payment to refund:** most shops put the order number in the Stripe payment's metadata (e.g. `order_id`). Tell the platform which case field has the order number and which metadata key to match. If a connector returns the Stripe payment id (`pi_…`), choose that field instead.
+6. **Vouchers:** the code prefix (e.g. *SORRY*) and how many days codes stay valid.
+7. Choose **Issue automatically** (as soon as compensation is approved) or leave it off so an agent clicks **Issue** on each case. **Save**.
+
+**Safety:**
+- Each decision is paid **at most once**, even if someone double-clicks, the worker restarts, or Stripe times out. Stripe recognises the repeat request and returns the first result.
+- Only **approved** compensation is paid. Anything waiting for approval waits.
+- A refund is refused if the payment was in a different currency.
+- Every attempt and its result is in the case's history and in **Recent payouts**, with a link to Stripe.
+
 # Part C: Recipes and reference
 
 ## C1. Recipes
@@ -603,13 +642,15 @@ Create a rule *Weather delays: no compensation* with the condition *Shipping tra
 | The draft says "Prompt template problem in …". | A template uses data this case doesn't have. Open that template, **Preview** it with this case, and guard the data with `{% if … is defined %}`. |
 | The draft didn't mention the refund. | The compensation isn't **approved** yet, or a rule decided *no compensation*. Check the Compensation card. |
 | I can't click *Decide again*. | The decision was already approved or rejected. Those are final, because the customer may already have been told. |
+| A payout failed: *Couldn't find the Stripe payment for order …* | The order number isn't in any Stripe payment's metadata under the key set in **Payouts → Finding the payment**. Check the key with your shop, or map the payment id with a connector, then click **Try again**. |
+| A payout failed: *No Stripe customer has the email …* | Balance credit needs the customer to exist in Stripe with the same email. Use a voucher code for this type instead, or issue it by hand. |
 | Why do two cases from one customer get different treatment? | The repeat-claim guardrail: a second compensation within the window needs approval. |
 
 ## C4. What's not built yet
 
 - **Sign-in.** The business picker and "Acting as" box are temporary.
 - **Email for Microsoft 365 / Outlook.com, and attachment files.** Inboxes connect with an app password (Gmail, iCloud, Yahoo, Fastmail, Zoho, other IMAP hosts). Attachments are listed but not stored. Webform and API cases still have simulated replies.
-- **Paying compensation.** Approving records the decision, but money isn't sent automatically.
+- **Cash payouts.** Refunds, balance credit and voucher codes go through Stripe ([B9](#b9-payouts-issuing-compensation-through-stripe)); sending cash to a customer's bank (PayPal, Wise and similar) isn't built yet.
 - **SLA timers, automatic escalation and auto-close.** SLA hours and the reopen window are saved on queues but not enforced yet, so Solved cases aren't closed automatically.
 - **AI sending replies on its own.** The setting exists, but every draft still needs a person.
 
@@ -621,6 +662,7 @@ Your administrator can load the *Northwind Outfitters* demo shown in this handbo
 - queues
 - connectors to a pretend shop and shipping system
 - compensation rules
+- Stripe payouts against a pretend Stripe (no real money)
 - a persona template
 - sample cases
 - seven cases in different states, including one where a lookup fails

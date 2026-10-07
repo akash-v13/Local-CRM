@@ -7,6 +7,7 @@ import { PipelineDiagram } from "../../components/PipelineDiagram";
 import { useSession } from "../../context/SessionContext";
 import { formatCaseNumber, formatDateTime, parseCaseNumber } from "../../lib/format";
 import { readerLabel, STATE_LABELS, executionNodes, formatDuration, stepId } from "../../lib/pipeline";
+import { METHOD_SHORT, PAYOUT_STATUS_LABELS } from "../../lib/payouts";
 import { useLoad } from "../../lib/useLoad";
 import { PipelineTabs } from "./PipelinePage";
 
@@ -141,6 +142,13 @@ function ExecutionDetailPanel({ execution: e, id }: { execution: ExecutionDetail
             {d.rule_name && <p className="small">Rule: {d.rule_name}</p>}
             {d.amount !== null && <p className="muted small">{d.amount_explanation}</p>}
             {d.approval_reasons.length > 0 && <ul className="notes small">{d.approval_reasons.map((r) => <li key={r}>⚠ {r}</li>)}</ul>}
+            {d.payout && (
+              <p className="small">
+                Stripe: <span className={`tag payout-${d.payout.status}`}>{PAYOUT_STATUS_LABELS[d.payout.status]}</span> {METHOD_SHORT[d.payout.method]}
+                {d.payout.external_id && <span className="muted"> · {d.payout.external_id}</span>}
+                {d.payout.error && d.payout.status !== "succeeded" && <span className="error"> · {d.payout.error}</span>}
+              </p>
+            )}
           </>
         )}
       </>
