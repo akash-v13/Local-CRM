@@ -351,5 +351,6 @@ If you're building or adapting an API for this, these choices make it fast and r
 - [ ] **Conditions** stop calls that can't help (e.g. shipping lookups for non-delivery cases).
 - [ ] Credentials use **read-only** accounts. **Generate token now** works for token types.
 - [ ] Queues and compensation rules that use your fields tested with **Test with a real case** (see the [Business handbook](business-handbook.md), B2 and B4).
+- [ ] Paying through Stripe? Your checkout puts the order number in the Stripe payment's metadata (e.g. `metadata[order_id]`), or a connector returns the PaymentIntent id (`pi_…`) so refunds find the payment ([Business handbook B9](business-handbook.md#b9-payouts-issuing-compensation-through-stripe)).
 - [ ] A few test cases submitted, and **Executions** shows ✓ for every step.
 - [ ] Someone knows to check **Executions → Failed** regularly.

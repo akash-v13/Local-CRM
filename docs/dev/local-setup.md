@@ -124,7 +124,7 @@ Everything except AI drafting works without a key. To turn AI drafting on:
 
 ## Load demo data
 
-With the stack running, create a made-up shop ("Northwind Outfitters") with queues, connectors to the mock API, compensation rules, a persona template, sample cases and cases in different states:
+With the stack running, create a made-up shop ("Northwind Outfitters") with queues, connectors to the mock API, compensation rules, Stripe payouts (against the fake Stripe), a persona template, sample cases and cases in different states:
 
 ```bash
 cd backend
@@ -206,6 +206,17 @@ The demo seed script does steps 1–3 for you when GreenMail is running.
 1. **Operations → Reading**: tick **Read new cases' messages**, add an *Order number* field ("Letters then digits"), and use **Test it** on the sample email. It picks NW-10211 over the older NW-10187 mentioned in the same email.
 2. Save, then send an email (see above) mentioning an order such as `NW-10208`. The case gets `orderNumber`, the shop lookup runs on it, and **Pipeline → Executions** shows step ⓪.
 3. The reader is Jev when `TYPESAFE_API_KEY` is in `.env`, Claude when only `ANTHROPIC_API_KEY` is, and patterns alone otherwise. The worker's start-up log says which.
+
+### Try payouts (Stripe)
+
+docker-compose points payouts at a **fake Stripe** in the mocks service (`STRIPE_API_BASE=http://mocks:8100/stripe`, key `sk_test_mock`). Every order number has a payment (`pi_mock_<order>`, `metadata.order_id=<order>`), every email has a customer, and order numbers containing `404` have no payment. Nothing leaves your machine.
+
+1. **Operations → Credentials → New credential**: type **Bearer token**, name "Stripe (test mode)", token `sk_test_mock`.
+2. **Operations → Payouts**: tick **Issue compensation through Stripe**, choose the credential, **Check Stripe** (→ *Connected to Stripe in test mode*), **Save**.
+3. Submit a case that a compensation rule approves (see above), with an order number. A moment later the case's **Compensation** card shows **Issued · Stripe refund · re_mock_…**, and **Recent payouts** lists it.
+4. Use an order number with `404` in it: the payout **fails** with *Couldn't find the Stripe payment…*; fix it, then **Try again**.
+
+The demo seed script does steps 1–2. To use **real Stripe in test mode**: remove the `STRIPE_API_BASE` line from `docker-compose.yml`, `docker compose up -d`, and put your `sk_test_…` key in the credential instead (never in `.env` or code). Test-mode refunds need a test payment whose metadata has the order number, e.g. `stripe payment_intents create --amount 5000 --currency usd --confirm --payment-method pm_card_visa -d "metadata[order_id]=NW-10211" -d "automatic_payment_methods[enabled]=true" -d "automatic_payment_methods[allow_redirects]=never"` with the Stripe CLI.
 
 ### Try AI reply drafting
 

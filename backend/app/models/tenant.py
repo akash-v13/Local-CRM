@@ -17,3 +17,5 @@ class Tenant(IdMixin, CreatedAtMixin, Base):
     compensation_settings: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
     # Reading incoming messages (fields to pull out, category); see app/services/reading.py.
     reading_settings: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    # Issuing compensation (Stripe credential, methods, payment lookup); services/payouts.py.
+    payout_settings: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)

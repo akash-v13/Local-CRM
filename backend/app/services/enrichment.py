@@ -224,6 +224,12 @@ class EnrichmentService:
                 return
 
             job.status = "failed"
+            if job.kind == "issue_payout":
+                from app.services.payouts import payout_gave_up  # avoids an import cycle
+
+                payout_gave_up(session, job, error)
+                session.commit()
+                return
             if job.kind == "send_email":
                 from app.services.email import send_failed  # avoids an import cycle
 

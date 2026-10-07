@@ -23,6 +23,9 @@ x-backend-env: &backend-env
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   # Reading customer messages with TypeSafe's Jev (optional; falls back to Claude, then patterns).
   TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+  # Local development only: payouts go to the fake Stripe in the mocks service
+  # (key sk_test_mock). Remove this line to use real Stripe with a sk_test_ key.
+  STRIPE_API_BASE: http://mocks:8100/stripe
 
 services:
   db:

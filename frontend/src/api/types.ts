@@ -647,6 +647,66 @@ export interface CompensationDecision {
   reviewed_by: string | null;
   reviewed_at: string | null;
   review_note: string | null;
+  /** Set once the business's payment provider was asked to issue it (Operations → Payouts). */
+  payout?: PayoutSummary | null;
+}
+
+export type PayoutStatus = "queued" | "processing" | "retrying" | "succeeded" | "failed";
+export type PayoutMethod = "stripe_refund" | "stripe_credit" | "stripe_voucher" | "manual";
+
+/** The latest payout for a decision, copied onto decisions.compensation.payout. */
+export interface PayoutSummary {
+  id: string;
+  status: PayoutStatus;
+  method: PayoutMethod;
+  /** Stripe object id (re_…, cbtxn_…, promo_…) once issued. */
+  external_id: string | null;
+  /** Voucher code, once the voucher exists. */
+  code: string | null;
+  error: string | null;
+}
+
+export interface PayoutSettings {
+  enabled: boolean;
+  /** A "Bearer token" credential holding the Stripe secret key. */
+  credential_id: string | null;
+  auto_pay: boolean;
+  /** Compensation type → how it's issued. Missing or "manual" = an agent issues it by hand. */
+  methods: Partial<Record<CompensationType, PayoutMethod>>;
+  payment_field: string | null;
+  metadata_key: string | null;
+  order_field: string;
+  voucher_prefix: string;
+  voucher_expiry_days: number | null;
+}
+
+export interface Payout {
+  id: string;
+  case_id: string;
+  kind: CompensationType;
+  provider: string;
+  method: PayoutMethod;
+  amount: number;
+  currency: string;
+  status: PayoutStatus;
+  external_id: string | null;
+  details: { code?: string; expires_at?: number; payment_intent?: string; customer?: string; mode?: string } & Record<string, unknown>;
+  error: string | null;
+  attempts: number;
+  created_by: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface PayoutListRow extends Payout {
+  case_number: number;
+  customer_email: string;
+}
+
+export interface StripeCheckResult {
+  ok: boolean;
+  mode: "test" | "live" | null;
+  detail: string;
 }
 
 export interface RuleEvaluation {
@@ -726,6 +786,8 @@ export interface PipelineDefinition {
   queues: { id: string; name: string; priority: number; conditions: string[]; match: "all" | "any"; ai_drafting: boolean; ai_model: string | null }[];
   compensation_rules: { id: string; name: string; priority: number; conditions: string[]; outcome: string }[];
   compensation_guardrails: string;
+  /** Payouts on: approved compensation is issued through Stripe (Operations → Payouts). */
+  payouts: { provider: "stripe"; auto_pay: boolean; methods: Partial<Record<CompensationType, PayoutMethod>> } | null;
 }
 
 export type StepStatus = "ok" | "failed" | "skipped" | "not_run" | "pending";

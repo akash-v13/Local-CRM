@@ -19,6 +19,7 @@ const DEF: PipelineDefinition = {
   queues: [{ id: "q", name: "General", priority: 1000, conditions: [], match: "all", ai_drafting: true, ai_model: "claude-sonnet-5" }],
   compensation_rules: [],
   compensation_guardrails: "",
+  payouts: null,
 };
 
 describe("pipeline nodes", () => {

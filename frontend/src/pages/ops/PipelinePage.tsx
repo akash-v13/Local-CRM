@@ -7,6 +7,7 @@ import { PipelineDiagram } from "../../components/PipelineDiagram";
 import { useSession } from "../../context/SessionContext";
 import { formatCaseNumber, formatDateTime } from "../../lib/format";
 import { READER_LABELS, STATE_ICONS, STATE_LABELS, definitionNodes, formatDuration, stepId } from "../../lib/pipeline";
+import { METHOD_SHORT } from "../../lib/payouts";
 import { useLoad } from "../../lib/useLoad";
 
 /** The two views share a header: the pipeline (default) and its executions. */
@@ -134,7 +135,16 @@ function DefinitionDetail({ definition: d, id }: { definition: PipelineDefinitio
             ))}
           </ol>
         )}
-        <Link className="button small secondary" to="/ops/compensation">Manage rules</Link>
+        {d.payouts ? (
+          <p className="small">
+            Approved compensation is issued through Stripe {d.payouts.auto_pay ? "automatically" : "when an agent clicks Issue"}:{" "}
+            {Object.entries(d.payouts.methods).map(([type, method]) => `${type.replace("_", " ")} as ${METHOD_SHORT[method].toLowerCase()}`).join(", ")}.
+          </p>
+        ) : <p className="muted small">Approved compensation is issued by hand (Stripe payouts are off).</p>}
+        <div className="actions start">
+          <Link className="button small secondary" to="/ops/compensation">Manage rules</Link>
+          <Link className="button small secondary" to="/ops/payouts">Payouts</Link>
+        </div>
       </>
     );
   }

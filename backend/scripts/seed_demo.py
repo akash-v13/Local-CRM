@@ -9,6 +9,7 @@ Creates "Northwind Outfitters (demo)", a fictional online shop:
 - 3 credentials + 3 connectors (shop orders → shipping tracker → loyalty program)
   calling the mock API (docker-compose "mocks")
 - compensation rules and guardrails
+- Stripe payouts (test mode, against the fake Stripe in the mocks service)
 - a persona template for the Priority customers queue, and test-lab sample cases
 - message reading: order numbers pulled out of incoming emails
 - 7 cases in different states: auto-approved compensation, a repeat claim
@@ -262,6 +263,23 @@ def seed(api: Api, with_ai: bool) -> None:
         },
     )
     print("  compensation rules ✓")
+
+    # ----- payouts through Stripe (the fake Stripe in the mocks service) -------------------------
+    stripe = api.post(
+        f"{t}/credentials",
+        {"name": "Stripe (test mode)", "kind": "bearer", "secrets": {"token": "sk_test_mock"}},
+    )
+    api.put(
+        f"{t}/payouts/settings",
+        {
+            "enabled": True,
+            "credential_id": stripe["id"],
+            "auto_pay": True,
+            "metadata_key": "order_id",
+            "order_field": "attributes.orderNumber",
+        },
+    )
+    print("  Stripe payouts ✓")
 
     # ----- prompt templates and samples ---------------------------------------------------------
     api.put(

@@ -1636,6 +1636,38 @@ details.card[open] > summary {
   background: var(--note-bg);
   border-color: var(--note-border);
 }
+.payout-line {
+  border-top: 1px dashed var(--border);
+  padding-top: 0.5rem;
+  margin: 0.5rem 0;
+}
+.tag.payout-succeeded {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.tag.payout-retrying,
+.tag.payout-queued,
+.tag.payout-processing {
+  background: var(--note-bg);
+  border-color: var(--note-border);
+}
+.tag.payout-failed {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.stripe-check {
+  align-items: center;
+  margin: 0.25rem 0 0.75rem;
+}
+.payouts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+.payouts-table {
+  overflow-x: auto;
+}
 .simulation .stat-row {
   margin: 0.75rem 0;
 }

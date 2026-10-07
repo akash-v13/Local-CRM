@@ -1007,6 +1007,10 @@ class CompensationDecisionData(BaseModel):
     reviewed_by: str | None = None
     reviewed_at: datetime | None = None
     review_note: str | None = None
+    payout: dict[str, Any] | None = Field(
+        default=None,
+        description="The payout issuing this compensation (status, method, Stripe id).",
+    )
 
 
 class CompensationReview(BaseModel):
@@ -1142,6 +1146,10 @@ class PipelineDefinition(BaseModel):
     queues: list[PipelineQueue]
     compensation_rules: list[PipelineRule]
     compensation_guardrails: str
+    payouts: dict[str, Any] | None = Field(
+        default=None,
+        description="When payouts are on: provider, auto_pay and how each type is issued.",
+    )
 
 
 StepStatus = Literal["ok", "failed", "skipped", "not_run", "pending"]
@@ -1343,3 +1351,100 @@ class CategoryChange(BaseModel):
     category: CategoryIn
     actor_id: str = Field(min_length=1)
     reason: str | None = None
+
+
+# ----- payouts (issuing compensation) -------------------------------------------------------
+
+PayoutMethod = Literal["stripe_refund", "stripe_credit", "stripe_voucher", "manual"]
+# Which methods make sense for each compensation type.
+ALLOWED_METHODS: dict[str, set[str]] = {
+    "refund": {"stripe_refund", "manual"},
+    "store_credit": {"stripe_credit", "stripe_voucher", "manual"},
+    "voucher": {"stripe_voucher", "manual"},
+    "points": {"manual"},
+    "replacement": {"manual"},
+}
+
+
+class PayoutSettingsData(BaseModel):
+    """How approved compensation is issued."""
+
+    enabled: bool = False
+    credential_id: uuid.UUID | None = Field(
+        default=None, description="A 'Bearer token' credential holding the Stripe secret key."
+    )
+    auto_pay: bool = Field(default=True, description="Issue approved compensation automatically.")
+    methods: dict[str, PayoutMethod] = Field(
+        default_factory=lambda: dict[str, PayoutMethod](
+            refund="stripe_refund", store_credit="stripe_credit", voucher="stripe_voucher"
+        ),
+        description="Compensation type -> how it's issued. Missing = manual.",
+    )
+    payment_field: str | None = Field(
+        default=None,
+        description="Case field holding the Stripe PaymentIntent id, e.g. "
+        "enrichment.shop_orders.paymentIntentId. Tried first.",
+    )
+    metadata_key: str | None = Field(
+        default="order_id",
+        pattern=r"^[A-Za-z0-9_\-]{1,40}$",
+        description="Otherwise: search Stripe payments whose metadata[<key>] equals the "
+        "order field.",
+    )
+    order_field: str = Field(default="attributes.orderNumber")
+    voucher_prefix: str = Field(default="SORRY", pattern=r"^[A-Z0-9]{1,12}$")
+    voucher_expiry_days: int | None = Field(default=90, ge=1, le=730)
+
+    @model_validator(mode="after")
+    def _check(self) -> "PayoutSettingsData":
+        for kind, method in self.methods.items():
+            allowed = ALLOWED_METHODS.get(kind)
+            if allowed is None:
+                raise ValueError(f"Unknown compensation type '{kind}'.")
+            if method not in allowed:
+                raise ValueError(f"'{kind}' can't be issued as {method}.")
+        for path in (self.payment_field, self.order_field):
+            if path and not is_known_field(path):
+                raise ValueError(f"Unknown field '{path}'.")
+        if self.enabled and self.credential_id is None:
+            raise ValueError("Choose the Stripe credential before turning payouts on.")
+        return self
+
+
+class PayoutRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    case_id: uuid.UUID
+    kind: str
+    provider: str
+    method: str
+    amount: float
+    currency: str
+    status: str
+    external_id: str | None
+    details: dict[str, Any]
+    error: str | None
+    attempts: int
+    created_by: str | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class PayoutListRow(PayoutRead):
+    case_number: int
+    customer_email: str
+
+
+class PayoutRequest(BaseModel):
+    actor_id: str = Field(min_length=1)
+
+
+class StripeCheckRequest(BaseModel):
+    credential_id: uuid.UUID
+
+
+class StripeCheckResult(BaseModel):
+    ok: bool
+    mode: str | None = None
+    detail: str

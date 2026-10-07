@@ -50,6 +50,7 @@ from app.schemas import (
     SimulationResult,
     SimulationRow,
 )
+from app.services.payouts import queue_payout
 from app.services.routing import case_context
 
 KEY = "compensation"
@@ -298,6 +299,8 @@ class CompensationService:
                 },
             )
         )
+        if data.status == "approved":  # approved automatically: issue it if the business does
+            queue_payout(self.session, case, actor_id)
         return data
 
     def decide_again(
@@ -343,6 +346,10 @@ class CompensationService:
                 data={"label": decision.label, "amount": decision.amount},
             )
         )
+        if approve:
+            queue_payout(self.session, case, req.actor_id)
+            refreshed = stored_decision(case)
+            decision = refreshed if refreshed is not None else decision
         case.updated_at = utcnow()
         self.session.commit()
         return decision

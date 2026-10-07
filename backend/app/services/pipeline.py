@@ -51,6 +51,7 @@ from app.schemas import (
     QueueSettings,
     RequestPreview,
 )
+from app.services.payouts import settings_of as payout_settings_of
 from app.services.reading import settings_of
 
 ENRICHMENT = "enrichment."
@@ -211,6 +212,7 @@ class PipelineService:
         tenant = self.tenants.get(tenant_id)
         assert tenant is not None  # checked by _tenant_settings above
         reading = settings_of(tenant)
+        payouts = payout_settings_of(tenant)
         return PipelineDefinition(
             reading=(
                 {
@@ -231,6 +233,15 @@ class PipelineService:
                 f"Approval if the customer was compensated {settings.repeat_max_count}+ time(s) "
                 f"in {settings.repeat_lookback_days} days, or the amount is above the queue's "
                 "approval threshold."
+            ),
+            payouts=(
+                {
+                    "provider": "stripe",
+                    "auto_pay": payouts.auto_pay,
+                    "methods": {k: m for k, m in payouts.methods.items() if m != "manual"},
+                }
+                if payouts.enabled
+                else None
             ),
         )
 

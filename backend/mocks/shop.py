@@ -10,6 +10,9 @@ Endpoints (all JSON):
   GET  /orders/{orderNumber}   Needs "Authorization: Bearer <token>" from /oauth/token.
   GET  /shipments/{tracking}   Needs "X-Api-Key: demo-key".
   GET  /loyalty/{email}        Needs "Authorization: Bearer demo-loyalty-token".
+  /stripe/v1/…                 A tiny fake Stripe (key sk_test_mock): payments for every
+                               order (pi_mock_<order>), customers, refunds, balance credits,
+                               coupons and promotion codes, with idempotency replay.
   GET  /health
 
 Order data is made up but deterministic: the same order number always gives
@@ -27,7 +30,7 @@ import time
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any
 
-from fastapi import FastAPI, Form, Header, HTTPException
+from fastapi import FastAPI, Form, Header, HTTPException, Request
 
 app = FastAPI(title="Mock shop & shipping API")
 
@@ -101,6 +104,7 @@ def order(
         "daysLate": days_late,
         "carrier": carrier,
         "trackingNumber": f"TRK{_number(order_number + 'k', 100000, 999999)}",
+        "paymentIntentId": f"pi_mock_{order_number.replace('-', '_')}",
         "items": [
             {"sku": f"SKU-{_number(order_number + str(i), 100, 999)}", "quantity": 1}
             for i in range(_number(order_number + "n", 1, 3))
@@ -139,3 +143,167 @@ def loyalty(email: str, authorization: Annotated[str | None, Header()] = None) -
         "ordersLast12Months": _number(email + "o", 1, 24),
         "compensationClaimsLast12Months": _number(email + "c", 0, 3),
     }
+
+
+# ----- fake Stripe ------------------------------------------------------------------------
+# Enough of api.stripe.com for the payout demo. Every order has a USD PaymentIntent
+# (pi_mock_<order>, metadata.order_id=<order>); every email has a customer. State is
+# in memory and resets when the service restarts.
+
+STRIPE_KEY = "sk_test_mock"
+_stripe: dict[str, Any] = {"refunds": [], "balance": [], "coupons": [], "promos": [], "replay": {}}
+
+
+def _stripe_auth(authorization: str | None) -> None:
+    if authorization != f"Bearer {STRIPE_KEY}":
+        raise HTTPException(401, detail={"error": {"message": "Invalid API Key provided"}})
+
+
+def _intent(intent_id: str) -> dict[str, Any]:
+    order = intent_id.removeprefix("pi_mock_").replace("_", "-")
+    total = _number(order + "t", 1500, 95000)
+    return {
+        "id": intent_id,
+        "object": "payment_intent",
+        "amount": total,
+        "amount_received": total,
+        "currency": "usd",
+        "metadata": {"order_id": order},
+        "livemode": False,
+    }
+
+
+def _metadata(form: dict[str, str]) -> dict[str, str]:
+    return {k[9:-1]: v for k, v in form.items() if k.startswith("metadata[")}
+
+
+@app.get("/stripe/v1/balance")
+def stripe_balance(authorization: Annotated[str | None, Header()] = None) -> dict[str, Any]:
+    _stripe_auth(authorization)
+    return {
+        "object": "balance",
+        "livemode": False,
+        "available": [{"amount": 500000, "currency": "usd"}],
+    }
+
+
+@app.get("/stripe/v1/payment_intents/search")
+def stripe_search(
+    query: str, authorization: Annotated[str | None, Header()] = None
+) -> dict[str, Any]:
+    _stripe_auth(authorization)
+    order = query.split(":'", 1)[1].rstrip("'") if ":'" in query else ""
+    found = [] if not order or "404" in order else [_intent("pi_mock_" + order.replace("-", "_"))]
+    return {"object": "search_result", "data": found}
+
+
+@app.get("/stripe/v1/payment_intents/{intent_id}")
+def stripe_intent(
+    intent_id: str, authorization: Annotated[str | None, Header()] = None
+) -> dict[str, Any]:
+    _stripe_auth(authorization)
+    return _intent(intent_id)
+
+
+@app.get("/stripe/v1/customers")
+def stripe_customers(
+    email: str, authorization: Annotated[str | None, Header()] = None
+) -> dict[str, Any]:
+    _stripe_auth(authorization)
+    return {
+        "object": "list",
+        "data": [{"id": f"cus_mock_{_number(email, 10000, 99999)}", "email": email}],
+    }
+
+
+@app.get("/stripe/v1/refunds")
+def stripe_list_refunds(
+    payment_intent: str, authorization: Annotated[str | None, Header()] = None
+) -> dict[str, Any]:
+    _stripe_auth(authorization)
+    return {
+        "object": "list",
+        "data": [r for r in _stripe["refunds"] if r["payment_intent"] == payment_intent],
+    }
+
+
+@app.get("/stripe/v1/promotion_codes")
+def stripe_list_promos(
+    code: str, authorization: Annotated[str | None, Header()] = None
+) -> dict[str, Any]:
+    _stripe_auth(authorization)
+    return {"object": "list", "data": [p for p in _stripe["promos"] if p["code"] == code]}
+
+
+@app.post("/stripe/v1/{path:path}")
+async def stripe_post(
+    path: str,
+    request: Request,
+    authorization: Annotated[str | None, Header()] = None,
+    idempotency_key: Annotated[str | None, Header()] = None,
+) -> Any:
+    _stripe_auth(authorization)
+    form = {k: str(v) for k, v in (await request.form()).items()}
+    if idempotency_key and idempotency_key in _stripe["replay"]:
+        original, replayed = _stripe["replay"][idempotency_key]
+        if original != form:
+            raise HTTPException(
+                400,
+                detail={
+                    "error": {
+                        "type": "idempotency_error",
+                        "message": "Idempotency key reused with different parameters.",
+                    }
+                },
+            )
+        return replayed
+    meta = _metadata(form)
+    result: dict[str, Any]
+    if path == "refunds":
+        intent = _intent(form["payment_intent"])
+        if "404" in intent["metadata"]["order_id"]:
+            raise HTTPException(400, detail={"error": {"message": "No such payment_intent"}})
+        result = {
+            "id": f"re_mock_{len(_stripe['refunds']) + 1}",
+            "object": "refund",
+            "amount": int(form["amount"]),
+            "currency": "usd",
+            "status": "succeeded",
+            "payment_intent": form["payment_intent"],
+            "metadata": meta,
+        }
+        _stripe["refunds"].append(result)
+    elif path.startswith("customers/") and path.endswith("/balance_transactions"):
+        result = {
+            "id": f"cbtxn_mock_{len(_stripe['balance']) + 1}",
+            "object": "customer_balance_transaction",
+            "amount": int(form["amount"]),
+            "currency": form["currency"],
+            "ending_balance": int(form["amount"]),
+            "metadata": meta,
+        }
+        _stripe["balance"].append(result)
+    elif path == "coupons":
+        result = {
+            "id": f"co_mock_{len(_stripe['coupons']) + 1}",
+            "object": "coupon",
+            "amount_off": int(form["amount_off"]),
+            "currency": form["currency"],
+            "metadata": meta,
+        }
+        _stripe["coupons"].append(result)
+    elif path == "promotion_codes":
+        result = {
+            "id": f"promo_mock_{len(_stripe['promos']) + 1}",
+            "object": "promotion_code",
+            "code": form["code"],
+            "customer": form.get("customer"),
+            "promotion": {"type": "coupon", "coupon": form["promotion[coupon]"]},
+            "metadata": meta,
+        }
+        _stripe["promos"].append(result)
+    else:
+        raise HTTPException(404, detail={"error": {"message": "Unrecognized request URL"}})
+    if idempotency_key:
+        _stripe["replay"][idempotency_key] = (form, result)
+    return result

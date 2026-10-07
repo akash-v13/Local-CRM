@@ -129,6 +129,14 @@ await page.getByRole("button", { name: "Run test" }).first().click();
 await page.locator(".preview-winner").waitFor();
 await shot("compensation-editor", page, { fullPage: true });
 
+// Payouts: the demo uses the fake Stripe in the mocks service (key sk_test_mock).
+await open("/ops/payouts", "Recent payouts");
+await page.getByRole("button", { name: "Check Stripe" }).click();
+await page.getByText("Connected to Stripe").waitFor();
+await page.locator(".payouts-table").waitFor();
+await shot("payouts", page, { fullPage: true });
+await shot("payouts-recent", card("Recent payouts"));
+
 await open("/ops/templates", "Platform rules");
 await shot("templates", page, { fullPage: true });
 await open("/ops/templates/queue/PriorityCustomers.jinja", "Template (Jinja)");

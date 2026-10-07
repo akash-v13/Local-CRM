@@ -2,9 +2,11 @@ import { useState } from "react";
 import { Link } from "react-router";
 
 import { api, errorMessage } from "../api/client";
-import type { CaseDetail } from "../api/types";
+import type { CaseDetail, CompensationDecision } from "../api/types";
 import { STATUS_LABELS, formatMoney, isFinal } from "../lib/compensation";
 import { formatCaseNumber, formatDateTime } from "../lib/format";
+import { METHOD_SHORT, PAYOUT_STATUS_LABELS, methodFor } from "../lib/payouts";
+import { useLoad } from "../lib/useLoad";
 
 interface Props {
   caseDetail: CaseDetail;
@@ -17,10 +19,13 @@ interface Props {
  * guardrail tripped) approve / reject. "Decide again" re-runs the rules,
  * e.g. after enrichment finished or rules changed; not allowed once approved
  * or rejected. AI drafts only mention compensation once it's approved.
+ * Approved compensation can be issued through the business's Stripe account
+ * (Operations → Payouts); its progress shows here, with Issue / Try again.
  */
 export function CompensationCard({ caseDetail, agentId, onChanged }: Props) {
   const c = caseDetail;
   const d = c.decisions.compensation;
+  const payoutSettings = useLoad(() => api.payoutSettings(c.tenant_id), [c.tenant_id]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -110,6 +115,15 @@ export function CompensationCard({ caseDetail, agentId, onChanged }: Props) {
           {d.review_note && ` · “${d.review_note}”`}
         </p>
       )}
+      {d.status === "approved" && d.amount !== null && (
+        <PayoutLine
+          decision={d}
+          method={methodFor(payoutSettings.data, d.type)}
+          autoPay={payoutSettings.data?.auto_pay ?? true}
+          busy={busy}
+          onPay={() => void act(() => api.payNow(c.tenant_id, c.case_number, agentId))}
+        />
+      )}
       {!isFinal(d) && (
         <button type="button" className="button small secondary" disabled={busy} onClick={decideAgain}>Decide again</button>
       )}
@@ -121,6 +135,49 @@ export function CompensationCard({ caseDetail, agentId, onChanged }: Props) {
             : "AI drafts won't offer compensation."}
       </p>
       {error && <p className="error small" role="alert">{error}</p>}
+    </div>
+  );
+}
+
+interface PayoutLineProps {
+  decision: CompensationDecision;
+  /** How this type is issued (null = by hand, or payouts are off). */
+  method: ReturnType<typeof methodFor>;
+  autoPay: boolean;
+  busy: boolean;
+  onPay: () => void;
+}
+
+/** Whether approved compensation was issued through Stripe, and Issue / Try again. */
+function PayoutLine({ decision, method, autoPay, busy, onPay }: PayoutLineProps) {
+  const p = decision.payout;
+  if (p) {
+    return (
+      <div className="payout-line">
+        <p className="small">
+          <span className={`tag payout-${p.status}`}>{PAYOUT_STATUS_LABELS[p.status]}</span>{" "}
+          {METHOD_SHORT[p.method]}
+          {p.code && <> · code <code className="code-inline">{p.code}</code></>}
+          {p.external_id && <span className="muted"> · {p.external_id}</span>}
+        </p>
+        {p.error && p.status !== "succeeded" && <p className="error small">{p.error}</p>}
+        {p.status === "failed" && (
+          <button type="button" className="button small" disabled={busy} onClick={onPay}>Try again</button>
+        )}
+        {p.status === "retrying" && <p className="hint">Stripe didn't answer cleanly; trying again shortly. It can't be paid twice.</p>}
+      </div>
+    );
+  }
+  if (!method) {
+    return <p className="hint">Issue this by hand, or let Local CRM issue it through Stripe (<Link to="/ops/payouts">Payouts</Link>).</p>;
+  }
+  return (
+    <div className="payout-line">
+      {autoPay ? (
+        <p className="hint">Will be issued automatically as a {METHOD_SHORT[method].toLowerCase()}.</p>
+      ) : (
+        <button type="button" className="button small" disabled={busy} onClick={onPay}>Issue {METHOD_SHORT[method].toLowerCase()}</button>
+      )}
     </div>
   );
 }

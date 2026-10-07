@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # (field values, category); otherwise Claude does, or patterns alone without either key.
     typesafe_api_key: str | None = None
 
+    # --- Payouts -----------------------------------------------------------------------
+    # Stripe API base URL. Only changed for local demos (the mock API's fake Stripe at
+    # http://mocks:8100/stripe); each business's own Stripe key decides test vs live.
+    stripe_api_base: str = "https://api.stripe.com"
+
     # Background worker: seconds between checks for new jobs when idle.
     worker_poll_seconds: float = 1.0
 

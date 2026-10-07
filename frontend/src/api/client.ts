@@ -21,6 +21,10 @@ import type {
   CompensationRule,
   CompensationRuleInput,
   CompensationSettings,
+  Payout,
+  PayoutListRow,
+  PayoutSettings,
+  StripeCheckResult,
   CostProjection,
   ReadingInfo,
   ReadingRecord,
@@ -255,6 +259,19 @@ export const api = {
       `/tenants/${tenantId}/cases/${caseNumber}/compensation/${approve ? "approve" : "reject"}`,
       { actor_id: actorId, note: note || null },
     ),
+
+  // Payouts (issuing approved compensation through Stripe)
+  payoutSettings: (tenantId: string) => request<PayoutSettings>(`/tenants/${tenantId}/payouts/settings`),
+  savePayoutSettings: (tenantId: string, input: PayoutSettings) =>
+    put<PayoutSettings>(`/tenants/${tenantId}/payouts/settings`, input),
+  checkStripe: (tenantId: string, credentialId: string) =>
+    post<StripeCheckResult>(`/tenants/${tenantId}/payouts/check-stripe`, { credential_id: credentialId }),
+  listPayouts: (tenantId: string, status?: string) =>
+    request<PayoutListRow[]>(`/tenants/${tenantId}/payouts${status ? `?status=${status}` : ""}`),
+  casePayouts: (tenantId: string, caseNumber: number) =>
+    request<Payout[]>(`/tenants/${tenantId}/cases/${caseNumber}/payouts`),
+  payNow: (tenantId: string, caseNumber: number, actorId: string) =>
+    post<Payout>(`/tenants/${tenantId}/cases/${caseNumber}/payouts`, { actor_id: actorId }),
 
   // AI reply drafting
   aiModels: () => request<ModelOption[]>("/ai/models"),

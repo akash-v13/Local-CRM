@@ -15,6 +15,7 @@ from app.models.customer import Customer
 from app.models.job import Job
 from app.models.mailbox import Mailbox
 from app.models.message import Message
+from app.models.payout import Payout
 from app.models.prompt_template import (
     PromptTemplate,
     PromptTemplateVersion,
@@ -35,6 +36,7 @@ __all__ = [
     "Job",
     "Mailbox",
     "Message",
+    "Payout",
     "Queue",
     "PromptTemplate",
     "PromptTemplateVersion",
