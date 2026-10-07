@@ -8,14 +8,14 @@
  */
 import type { ExecutionDetail, PipelineDefinition, StepStatus } from "../api/types";
 
-export type NodeKind = "start" | "connector" | "routing" | "compensation" | "end";
+export type NodeKind = "start" | "reader" | "connector" | "routing" | "compensation" | "end";
 /** "done" = a non-connector stage that happened; "waiting" = not reached yet. */
 export type NodeState = StepStatus | "done" | "waiting";
 
 export interface FlowNode {
   id: string;
   kind: NodeKind;
-  /** ① ② ③ for connector steps. */
+  /** ⓪ for reading the message, ① ② ③ for connector steps. */
   number?: number;
   title: string;
   subtitle?: string;
@@ -51,6 +51,21 @@ export const STATE_ICONS: Record<NodeState, string> = {
 
 export const stepId = (key: string) => `step:${key}`;
 
+export const READER_LABELS: Record<string, string> = {
+  jev: "Jev (TypeSafe AI)",
+  claude: "Claude",
+  patterns: "Patterns only (no AI key set)",
+};
+
+/** "jev-1.13.0" → "Jev (TypeSafe AI)", "claude-haiku-4-5" → "Claude (claude-haiku-4-5)". */
+export function readerLabel(model: string): string {
+  if (model.startsWith("jev")) return `Jev (TypeSafe AI)${model === "jev" ? "" : ` · ${model}`}`;
+  if (model.startsWith("claude-")) return `Claude (${model})`;
+  return READER_LABELS[model] ?? model;
+}
+
+const percent = (n: number | null) => (n === null ? "" : ` (${Math.round(n * 100)}%)`);
+
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** The business-wide pipeline every new case goes through. */
@@ -61,12 +76,28 @@ export function definitionNodes(d: PipelineDefinition): FlowNode[] {
       id: "start",
       kind: "start",
       title: "Case received",
-      subtitle: "Webform or API",
+      subtitle: "Webform, email or API",
       facts: d.connectors.length ? ["Enrichment starts automatically"] : ["No connectors: routed straight away"],
       uses: [],
       problems: [],
     },
   ];
+  if (d.reading) {
+    nodes.push({
+      id: "reader",
+      kind: "reader",
+      number: 0,
+      title: "Read the message",
+      subtitle: `${READER_LABELS[d.reading.model] ?? d.reading.model} · ${d.reading.channels.join(", ")} cases`,
+      facts: [
+        ...(d.reading.fields.length ? [`Finds: ${d.reading.fields.map((f) => f.label).join(", ")}`] : []),
+        ...(d.reading.read_category ? ["Chooses the category from the tone and context"] : []),
+        `Saves answers ≥ ${Math.round(d.reading.min_confidence * 100)}% confident; the rest go to an agent`,
+      ],
+      uses: [],
+      problems: [],
+    });
+  }
   for (const c of d.connectors) {
     const facts = [
       `${c.method} ${shortUrl(c.url_template)}`,
@@ -133,8 +164,27 @@ export function executionNodes(d: PipelineDefinition, e: ExecutionDetail): FlowN
   }));
   const routed = !!e.routing.queue_name;
   const decision = e.compensation;
+  const reader = byId.get("reader");
+  const r = e.reading;
+  const readerNode: FlowNode[] = r
+    ? [{
+        ...(reader ?? { id: "reader", kind: "reader" as const, number: 0, title: "Read the message", facts: [], uses: [], problems: [] }),
+        subtitle: readerLabel(r.model),
+        state: r.status === "failed" ? "failed" : "ok",
+        durationMs: r.latency_ms,
+        facts: [
+          ...r.fields.map((f) =>
+            f.status === "found" ? `${f.label}: ${f.value}${percent(f.confidence)}`
+            : f.status === "needs_review" ? `${f.label}: needs an agent (${f.candidates.length} candidates)`
+            : `${f.label}: not in the message`),
+          ...(r.category ? [`Category: ${r.category.label}${percent(r.category.confidence)}${r.category.applied ? "" : " (suggested)"}`] : []),
+          ...(r.error ? [r.error] : []),
+        ],
+      }]
+    : reader ? [{ ...reader, state: "skipped" as const, facts: ["Not needed for this case (nothing missing, or channel not read)"] }] : [];
   return [
     { ...byId.get("start")!, state: "done", facts: [`${e.customer_name ?? e.customer_email}`, e.category] },
+    ...readerNode,
     ...steps,
     {
       ...byId.get("routing")!,

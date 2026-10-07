@@ -84,6 +84,8 @@ export interface Case {
   /** Per connector key: what happened the last time it ran for this case. */
   enrichment: Record<string, EnrichmentResult>;
   decisions: { compensation?: CompensationDecision } & Record<string, unknown>;
+  /** What was read from the customer's message (empty when reading didn't run). */
+  extraction: ReadingRecord | Record<string, never>;
   queue_id: string | null;
   queue: QueueSummary | null;
   assignee_type: string | null;
@@ -712,6 +714,13 @@ export interface PipelineConnectorStep {
 }
 
 export interface PipelineDefinition {
+  reading: {
+    channels: string[];
+    model: "jev" | "claude" | "patterns";
+    fields: { key: string; label: string }[];
+    read_category: boolean;
+    min_confidence: number;
+  } | null;
   connectors: PipelineConnectorStep[];
   inactive_connectors: string[];
   queues: { id: string; name: string; priority: number; conditions: string[]; match: "all" | "any"; ai_drafting: boolean; ai_model: string | null }[];
@@ -750,6 +759,7 @@ export interface ExecutionSummary {
   queue_name: string | null;
   compensation_status: CompensationStatus | null;
   compensation_label: string | null;
+  reading: ReadingRecord | null;
 }
 
 export interface ExecutionDetail extends ExecutionSummary {
@@ -814,4 +824,51 @@ export interface MailboxRecentCase {
   status: CaseStatus;
   customer_email: string;
   subject: string | null;
+}
+
+// ----- reading messages -----
+
+export type ReadingChannel = "email" | "webform" | "chat" | "api";
+
+export interface ReadingField {
+  key: string;
+  label: string;
+  description: string;
+  pattern: string;
+}
+
+export interface ReadingSettings {
+  enabled: boolean;
+  channels: ReadingChannel[];
+  read_category: boolean;
+  min_confidence: number;
+  fields: ReadingField[];
+}
+
+export interface ReadingInfo {
+  settings: ReadingSettings;
+  reader: "jev" | "claude" | "patterns" | string;
+  presets: { id: string; pattern: string; description: string }[];
+}
+
+export interface ReadFieldResult {
+  key: string;
+  label: string;
+  status: "found" | "not_found" | "needs_review" | "provided";
+  value: string | null;
+  confidence: number | null;
+  candidates: string[];
+  reviewed_by: string | null;
+}
+
+export interface ReadingRecord {
+  status: "ok" | "failed" | "patterns_only";
+  model: string;
+  error: string | null;
+  fields: ReadFieldResult[];
+  category: { value: CategorySelection | null; label: string; confidence: number; confident: boolean; applied: boolean } | null;
+  input_tokens: number;
+  cost_usd: number;
+  latency_ms: number;
+  read_at: string;
 }

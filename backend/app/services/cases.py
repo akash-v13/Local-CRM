@@ -35,6 +35,7 @@ from app.schemas import (
 )
 from app.services.compensation import CompensationService
 from app.services.email import InboundEmail, outbound_email
+from app.services.reading import queue_reading, settings_of, should_read
 from app.services.routing import case_context, to_candidate
 
 # How many times to retry if two servers pick the same case number (same microsecond).
@@ -56,13 +57,20 @@ class CaseService:
     # ----- intake -------------------------------------------------------------------------
 
     def create_case(
-        self, tenant_id: uuid.UUID, data: CaseCreate, *, inbound: InboundEmail | None = None
+        self,
+        tenant_id: uuid.UUID,
+        data: CaseCreate,
+        *,
+        inbound: InboundEmail | None = None,
+        category_source: str = "customer",
     ) -> Case:
         """Intake: create the case and its first message, then enrich or route it.
 
         All in one transaction. The customer is matched by email within the
         tenant, or created.
 
+        - If the business reads messages for this channel (app/services/reading.py), a
+          `read_case` job is queued first; it fills in fields/category, then continues below.
         - If the tenant has active connectors, an `enrich_case` job is queued and
           the case stays in Intake; the worker enriches it and then routes it,
           so routing rules can use enriched data (order value, days late, ...).
@@ -70,7 +78,9 @@ class CaseService:
           or it stays in Intake with a `case.unrouted` event.
 
         `inbound` (from the email importer) attaches the email's Message-ID and
-        details to the first message, and the inbox to the case.
+        details to the first message, and the inbox to the case. `category_source`
+        says where `data.category` came from ("customer", or "inbox" for an inbox's
+        default, which reading may replace).
         """
         if self.tenants.get(tenant_id) is None:
             raise NotFoundError(f"Tenant {tenant_id} not found.")
@@ -94,7 +104,11 @@ class CaseService:
             channel=data.channel,
             language=data.language,
             # Both are kept (Idea 8): `effective` may later be corrected by AI or an agent.
-            category={"customerSelected": selected, "effective": selected, "source": "customer"},
+            category={
+                "customerSelected": selected if category_source == "customer" else None,
+                "effective": selected,
+                "source": category_source,
+            },
             attributes=data.attributes,
             mailbox_id=inbound.mailbox_id if inbound else None,
         )
@@ -123,12 +137,22 @@ class CaseService:
                 actor_type="system",
             )
         )
-        if self.connectors.has_active(tenant_id):
-            self._queue_enrichment(case, "system", None)
+        tenant = self.tenants.get(tenant_id)
+        if tenant is not None and should_read(settings_of(tenant), case):
+            queue_reading(self.session, case)  # the read_case job continues intake afterwards
         else:
-            self.apply_routing(case, [data.message], "system", None)
+            self.continue_intake(case, [data.message])
         self.session.commit()
         return case
+
+    def continue_intake(self, case: Case, customer_texts: list[str] | None = None) -> None:
+        """The next intake step: enrichment if the business has connectors, else routing.
+        Does NOT commit."""
+        if self.connectors.has_active(case.tenant_id):
+            self._queue_enrichment(case, "system", None)
+        else:
+            texts = customer_texts or self.messages.customer_texts(case.tenant_id, case.id)
+            self.apply_routing(case, texts, "system", None)
 
     def _queue_enrichment(self, case: Case, actor_type: ActorType, actor_id: str | None) -> None:
         """Add an enrich_case job (committed with the caller's transaction)."""

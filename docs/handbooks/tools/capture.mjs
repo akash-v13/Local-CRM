@@ -170,6 +170,19 @@ if (!(await page.getByText(/✓ Emailed to priya/).count())) {
 await page.getByText(/✓ Emailed to priya/).waitFor();
 await shot("email-case", card("Conversation"));
 
+// Reading messages: settings + test, what was read on an email case, and step 0 in its run.
+await open("/ops/reading", "Fields to find");
+if (WITH_AI) {
+  await page.getByRole("button", { name: "Read it" }).click();
+  await page.locator(".reading-result td strong", { hasText: "NW-10211" }).waitFor({ timeout: 60000 });
+}
+await shot("reading-settings", page, { fullPage: true });
+await open(`/cases/${priya}`, "Read from the message");
+await shot("reading-case", card("Read from the message"));
+await open(`/ops/pipeline/executions/${priya}`, "Ready for an agent");
+await page.locator(".flow-node.kind-reader").click();
+await shot("pipeline-execution-reading", page, { fullPage: true });
+
 await open("/ops/samples", "Late gift");
 await shot("samples");
 

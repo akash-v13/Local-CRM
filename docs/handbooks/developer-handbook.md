@@ -49,7 +49,7 @@ flowchart LR
 | **API** | Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2, Alembic | Every business operation; maps domain errors to HTTP |
 | **Worker** | Same codebase, `python -m app.worker` | Background jobs from a Postgres queue (`FOR UPDATE SKIP LOCKED`): enrichment, template test runs |
 | **Database** | Postgres 17 | Relational columns for anything we filter on; JSONB for per-business data |
-| **AI** | Anthropic SDK, Jinja2 sandbox | Layered prompt templates → structured draft output |
+| **AI** | Anthropic SDK, Jinja2 sandbox, TypeSafe Jev (HTTP) | Layered prompt templates → structured draft output; Jev (or Claude) reads incoming messages |
 
 **Backend layers.** Each layer only calls the one below it:
 
@@ -148,6 +148,7 @@ sequenceDiagram
 | Compensation | `domain/compensation.py`, `services/compensation.py`, `api/compensation.py` | `Compensation*Page`, `CompensationCard`, `SimulationPanel` | `test_compensation`, `CompensationCard.test` | [§12](../dev/codebase-guide.md#12-compensation-matrix) |
 | Intake pipeline view | `services/pipeline.py` (definition, dependencies from placeholders, executions from stored results), `api/pipeline.py` | `PipelinePage` (+ Executions), `PipelineExecutionPage`, `PipelineDiagram`, `lib/pipeline.ts` | `test_pipeline`, `lib/pipeline.test.ts` | [§13](../dev/codebase-guide.md#13-intake-pipeline-view), [Integration guide](integration-guide.md) |
 | Email channel | `app/email/` (parse, transport), `services/email.py`, `api/mailboxes.py`, `models/mailbox.py`, worker jobs `poll_mailbox` / `send_email` | `MailboxListPage`, `MailboxEditorPage`, `MessageThread` (subject, delivery, Retry), `lib/mailProviders.ts` | `test_email`, `MessageThread.test` | [§14](../dev/codebase-guide.md#14-email-channel) |
+| Reading messages | `app/ai/reading.py`, `app/ai/readers.py` (Jev, Claude), `services/reading.py`, `api/reading.py`, worker job `read_case` | `ReadingPage`, `ReadingCard`, pipeline step ⓪ | `test_reading`, `ReadingCard.test` | [§15](../dev/codebase-guide.md#15-reading-messages) |
 | Demo data | `scripts/seed_demo.py`, `mocks/shop.py` (orders, shipments, loyalty) | — | (runs the whole flow) | this handbook |
 
 ---
@@ -207,7 +208,7 @@ These rules protect customer data and money.
 3. **Route:** add it in `api/<area>.py`. Keep it to about three lines: parse, call the service, return.
 4. **New router?** Include it in `main.py`. New error type? Add it to `domain/errors.py` and `ERROR_STATUS_CODES`.
 5. **Tests:** cover the happy path, a 404 for another tenant, and validation (422).
-6. **Docs:** add a row to the endpoint table ([Codebase §15](../dev/codebase-guide.md#15-api-endpoints)).
+6. **Docs:** add a row to the endpoint table ([Codebase §16](../dev/codebase-guide.md#16-api-endpoints)).
 
 The full worked example is in [Codebase §4](../dev/codebase-guide.md#4-adding-a-feature-worked-example).
 

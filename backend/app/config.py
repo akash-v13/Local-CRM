@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     # Anthropic API key (https://console.anthropic.com). Without it, drafting is off
     # and the UI says how to enable it.
     anthropic_api_key: str | None = None
+    # TypeSafe AI key (https://console.typesafe.ai). When set, Jev reads incoming messages
+    # (field values, category); otherwise Claude does, or patterns alone without either key.
+    typesafe_api_key: str | None = None
 
     # Background worker: seconds between checks for new jobs when idle.
     worker_poll_seconds: float = 1.0

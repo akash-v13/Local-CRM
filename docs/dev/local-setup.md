@@ -106,6 +106,8 @@ Everything except AI drafting works without a key. To turn AI drafting on:
 
    In the app, **✨ Draft with AI** on a case now writes a draft. That only happens if the case's queue has **Allow AI to draft replies** ticked (Operations → Queues & routing).
 
+**Reading messages with Jev (optional):** add `TYPESAFE_API_KEY=…` (from https://console.typesafe.ai/settings/keys) to the same `.env` and restart. Without it, Claude reads messages.
+
 **Running the backend outside Docker (option C)?** Put the same `ANTHROPIC_API_KEY=` line in `backend/.env` instead (copy `backend/.env.example`).
 
 **Cost:** a typical draft costs under one cent (see [costs in the main README](../../README.md#ai-costs)). To limit spending, set a monthly limit for the key in the Anthropic Console.
@@ -198,6 +200,12 @@ The stack includes **GreenMail**, a throwaway mail server (SMTP on `localhost:30
 5. Answer that email from Tom's side (keep the `In-Reply-To` header). It lands on the same case.
 
 The demo seed script does steps 1–3 for you when GreenMail is running.
+
+### Try reading messages
+
+1. **Operations → Reading**: tick **Read new cases' messages**, add an *Order number* field ("Letters then digits"), and use **Test it** on the sample email. It picks NW-10211 over the older NW-10187 mentioned in the same email.
+2. Save, then send an email (see above) mentioning an order such as `NW-10208`. The case gets `orderNumber`, the shop lookup runs on it, and **Pipeline → Executions** shows step ⓪.
+3. The reader is Jev when `TYPESAFE_API_KEY` is in `.env`, Claude when only `ANTHROPIC_API_KEY` is, and patterns alone otherwise. The worker's start-up log says which.
 
 ### Try AI reply drafting
 

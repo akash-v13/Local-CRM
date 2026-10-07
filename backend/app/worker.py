@@ -12,6 +12,7 @@ Job kinds:
   template_test   draft replies for a reply-template test run (needs ANTHROPIC_API_KEY)
   poll_mailbox    import new emails from a linked inbox (queued by `schedule_polls`)
   send_email      email an agent reply on an email case (retried with backoff)
+  read_case       read a new case's message (fields, category), then continue intake
 
 Between jobs the loop also queues inbox polls that are due (every few seconds).
 """
@@ -27,6 +28,7 @@ import httpx
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.drafter import DraftWriter
+from app.ai.readers import Reader, reader_from
 from app.ai.setup import draft_writer_from
 from app.config import get_settings
 from app.db import SessionLocal
@@ -35,6 +37,7 @@ from app.models import Job
 from app.security.ssrf import resolve_host
 from app.services.email import poll_mailbox, schedule_polls, send_email_job, transport_from
 from app.services.enrichment import EnrichmentService, claim_job
+from app.services.reading import read_case_job
 from app.services.template_tests import execute_test_run
 
 SCHEDULE_EVERY_SECONDS = 5.0
@@ -46,11 +49,13 @@ def build_handlers(
     service: EnrichmentService,
     writer: DraftWriter | None = None,
     mail: MailTransport | None = None,
+    reader: Reader | None = None,
 ) -> dict[str, Callable[[uuid.UUID], None]]:
     factory = service.session_factory
     handlers: dict[str, Callable[[uuid.UUID], None]] = {
         "enrich_case": service.enrich_case,
         "template_test": lambda job_id: execute_test_run(factory, writer, job_id),
+        "read_case": lambda job_id: read_case_job(factory, reader, job_id),
     }
     if mail is not None:
         handlers["poll_mailbox"] = lambda job_id: _poll(factory, mail, job_id)
@@ -76,13 +81,14 @@ def run_once(
     service: EnrichmentService,
     writer: DraftWriter | None = None,
     mail: MailTransport | None = None,
+    reader: Reader | None = None,
 ) -> bool:
     """Process one due job. Returns False if there was nothing to do."""
     claimed = claim_job(service.session_factory)
     if claimed is None:
         return False
     job_id, kind = claimed
-    handler = build_handlers(service, writer, mail).get(kind)
+    handler = build_handlers(service, writer, mail, reader).get(kind)
     try:
         if handler is None:
             raise ValueError(f"Unknown job kind '{kind}'.")
@@ -115,7 +121,12 @@ def main() -> None:
         )
         writer = draft_writer_from(settings)
         mail = transport_from(settings)
-        log.info("worker started (AI drafting %s)", "on" if writer else "off: no ANTHROPIC_API_KEY")
+        reader = reader_from(settings, client)
+        log.info(
+            "worker started (AI drafting %s; reading messages with %s)",
+            "on" if writer else "off: no ANTHROPIC_API_KEY",
+            reader.name if reader else "patterns only",
+        )
         last_schedule = 0.0
         while not stopping:
             if time.monotonic() - last_schedule >= SCHEDULE_EVERY_SECONDS:
@@ -125,7 +136,7 @@ def main() -> None:
                 except Exception:  # noqa: BLE001 - scheduling must never stop the worker
                     log.exception("scheduling inbox polls failed")
                 last_schedule = time.monotonic()
-            if not run_once(service, writer, mail):
+            if not run_once(service, writer, mail, reader):
                 time.sleep(settings.worker_poll_seconds)
 
 

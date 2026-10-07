@@ -21,6 +21,8 @@ x-backend-env: &backend-env
   # AI reply drafting: taken from your shell (`export ANTHROPIC_API_KEY=...` before
   # `docker compose up`). Empty = drafting off; the UI explains how to turn it on.
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  # Reading customer messages with TypeSafe's Jev (optional; falls back to Claude, then patterns).
+  TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
 
 services:
   db:

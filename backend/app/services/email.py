@@ -349,6 +349,7 @@ def ingest_message(
             attributes=attributes,
         ),
         inbound=inbound,
+        category_source="inbox",
     )
     return f"new case {created.case_number}"
 

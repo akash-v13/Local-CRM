@@ -1,6 +1,6 @@
 # Codebase Guide
 
-How the code is organized, why, and how to add to it. Sections 1–6 cover the backend in general, section 7 the frontend (details in [frontend/README.md](../../frontend/README.md)), sections 8–14 each feature (routing, reporting, enrichment, AI drafting, compensation, pipeline view, email channel), and section 15 lists the API endpoints.
+How the code is organized, why, and how to add to it. Sections 1–6 cover the backend in general, section 7 the frontend (details in [frontend/README.md](../../frontend/README.md)), sections 8–15 each feature (routing, reporting, enrichment, AI drafting, compensation, pipeline view, email channel, reading messages), and section 16 lists the API endpoints.
 
 ## 1. The layers
 
@@ -281,7 +281,28 @@ flowchart LR
 
 Not built yet: OAuth sign-in for Google Workspace / Microsoft 365, storing attachment files, sending from an inbox on non-email cases.
 
-## 15. API endpoints
+## 15. Reading messages
+
+Step ⓪ of the intake pipeline: pull data fields (order number, …) and the category out of the customer's message, so the steps after it can use them.
+
+```mermaid
+flowchart LR
+    Msg[Customer message] --> Cand["Candidates per field<br/>(pattern, with context)"]
+    Cand --> Model{"Reader chooses<br/>Jev → Claude → none"}
+    Model -- "≥ min confidence" --> Save["attributes.&lt;key&gt; / category"]
+    Model -- "unsure" --> Agent["Case card: agent picks"]
+    Save --> Next["① connectors → routing → compensation"]
+```
+
+| Piece | Where | Notes |
+|---|---|---|
+| Candidates & decisions | `app/ai/reading.py` (pure) | Pattern presets (code, digits, amount, date) or custom regex; distinct candidates with surrounding words; `decide_field` turns the model's pick + confidence into found / needs_review / not_found. Without a model, a single candidate is accepted. |
+| Readers | `app/ai/readers.py` | `Reader` interface. `JevReader`: TypeSafe's Jev over HTTP (`POST /v1/systemone`), one Choice question per field (candidates + "none") and one over the category list; returns calibrated confidence. `ClaudeReader`: Haiku with structured output (high/medium/low). `reader_from(settings)`: Jev if `TYPESAFE_API_KEY`, else Claude, else none. Both only see the masked message and can only pick options our code built. |
+| Workflow | `services/reading.py` | `should_read` (enabled, channel, something missing) → `read_case` job → values saved without overwriting provided attributes; category applied only if none was chosen or it's an inbox default (`source: "inbox"`), as `source: "ai"` → `case.extraction` record + `reading.completed` event → `CaseService.continue_intake` (enrichment or routing). Reader failures are recorded and never block a case. |
+| Review | `ReadingService.confirm_field / change_category` | Agents pick the right candidate or apply a suggested category (`reading.field_confirmed`, `case.recategorized`). |
+| Settings | `tenants.reading_settings` | Enabled, channels, read category, min confidence, fields (key, label, description, pattern). |
+
+## 16. API endpoints
 
 Full, always-current reference: http://localhost:8000/docs.
 
@@ -335,6 +356,10 @@ Full, always-current reference: http://localhost:8000/docs.
 | POST | `/tenants/{t}/mailboxes/{id}/check` | Check for new email now |
 | GET | `/tenants/{t}/mailboxes/{id}/recent` | Latest cases created from the inbox |
 | POST | `/tenants/{t}/cases/{c}/messages/{m}/retry-send` | Send a failed email again |
+| GET, PUT | `/tenants/{t}/reading` | Reading settings, which model reads (jev / claude / patterns), pattern presets |
+| POST | `/tenants/{t}/reading/preview` | Read a pasted message or a case with saved or unsaved settings (nothing saved) |
+| POST | `/tenants/{t}/cases/{c}/extraction/fields/{key}` | Agent sets a field the reader wasn't sure about |
+| POST | `/tenants/{t}/cases/{c}/category` | Agent sets the case's category |
 | GET | `/tenants/{t}/pipeline` | The intake pipeline: steps in order, dependencies, problems, queues, rules |
 | GET | `/tenants/{t}/pipeline/executions?outcome=&limit=` | Recent cases' runs (per-step status, time, queue, compensation) |
 | GET | `/tenants/{t}/pipeline/executions/{c}` | One case's run with requests, data, routing and compensation |

@@ -46,12 +46,13 @@ app/
 │   ├── compensation.py Compensation rules, decisions on cases, approvals, live test, backtest
 │   ├── pipeline.py   Intake pipeline view: steps + dependencies, and each case's run
 │   ├── email.py      Linked inboxes, importing emails into cases, sending replies
+│   ├── reading.py    Reading messages at intake (read_case job), settings, preview, agent review
 │   └── routing.py    Adapts models to the pure routing logic
 ├── connectors/       Calling external APIs: runner (one request), auth (credentials,
 │                     token cache), context (what templates can see)
 ├── security/         SSRF protection, secret encryption
 ├── email/            Email channel: parse.py (raw email → body, sender, threading), transport.py (IMAP/SMTP)
-├── ai/               Reply drafting
+├── ai/               Reply drafting, and reading messages (reading.py: candidates + decisions; readers.py: Jev, Claude)
 │   ├── engine.py     Layered Jinja templates: names, fallbacks, validation, sandboxed rendering
 │   ├── context.py    Case → the masked variables templates can use
 │   ├── templates/    Locked platform layers + the starter pack (see its README.md)

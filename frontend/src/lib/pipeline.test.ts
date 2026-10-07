@@ -13,6 +13,7 @@ const step = (key: string, position: number, uses: string[] = []): PipelineDefin
 });
 
 const DEF: PipelineDefinition = {
+  reading: null,
   connectors: [step("shop", 1), step("shipping", 2, ["shop"])],
   inactive_connectors: [],
   queues: [{ id: "q", name: "General", priority: 1000, conditions: [], match: "all", ai_drafting: true, ai_model: "claude-sonnet-5" }],
@@ -32,7 +33,7 @@ describe("pipeline nodes", () => {
     const run = {
       case_number: 1, created_at: "", customer_name: "Maya", customer_email: "m@example.com", category: "Complaint",
       case_status: "Queued", outcome: "partial", total_duration_ms: 40, queue_name: "General", compensation_status: null,
-      compensation_label: null, enriched_at: null, compensation: null,
+      compensation_label: null, enriched_at: null, compensation: null, reading: null,
       routing: { queue_name: "General", matched_conditions: [], routed_at: null },
       steps: [
         { key: "shop", name: "Shop orders", position: 1, status: "ok", error: null, http_status: 200, duration_ms: 40, request: null, data: { orderTotal: 10 }, missing: [], fetched_at: null },

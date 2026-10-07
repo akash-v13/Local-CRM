@@ -20,6 +20,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.config import Settings, get_settings
 from app.domain.compensation import TYPE_LABELS
 from app.domain.errors import NotFoundError
 from app.domain.routing import ConditionResult, describe_condition
@@ -50,8 +51,16 @@ from app.schemas import (
     QueueSettings,
     RequestPreview,
 )
+from app.services.reading import settings_of
 
 ENRICHMENT = "enrichment."
+
+
+def reader_kind(settings: Settings) -> str:
+    """Which model reads messages, from the configured keys (see app/ai/readers.py)."""
+    if settings.typesafe_api_key:
+        return "jev"
+    return "claude" if settings.anthropic_api_key else "patterns"
 
 
 def describe_criteria(criteria: dict[str, Any]) -> list[str]:
@@ -199,7 +208,21 @@ class PipelineService:
             )
             for r in self.rules.list(tenant_id, active_only=True)
         ]
+        tenant = self.tenants.get(tenant_id)
+        assert tenant is not None  # checked by _tenant_settings above
+        reading = settings_of(tenant)
         return PipelineDefinition(
+            reading=(
+                {
+                    "channels": reading.channels,
+                    "model": reader_kind(get_settings()),
+                    "fields": [{"key": f.key, "label": f.label} for f in reading.fields],
+                    "read_category": reading.read_category,
+                    "min_confidence": reading.min_confidence,
+                }
+                if reading.enabled
+                else None
+            ),
             connectors=steps,
             inactive_connectors=[c.name for c in all_connectors if not c.is_active],
             queues=queues,
@@ -292,6 +315,7 @@ class PipelineService:
             "queue_name": case.queue.name if case.queue else None,
             "compensation_status": decision.get("status"),
             "compensation_label": decision.get("label"),
+            "reading": dict(case.extraction) if case.extraction else None,
         }
 
     def executions(

@@ -10,6 +10,7 @@ Creates "Northwind Outfitters (demo)", a fictional online shop:
   calling the mock API (docker-compose "mocks")
 - compensation rules and guardrails
 - a persona template for the Priority customers queue, and test-lab sample cases
+- message reading: order numbers pulled out of incoming emails
 - 7 cases in different states: auto-approved compensation, a repeat claim
   waiting for approval, no compensation (weather), a failed shop lookup,
   replies, notes, solved
@@ -444,6 +445,27 @@ def seed(api: Api, with_ai: bool) -> None:
     move(cases["question"], "AssignedAgent")
     message(cases["question"], "customer_reply", "Also, is the blue one back in stock?")
 
+    # Read incoming emails: order numbers (so the shop lookup works on email cases).
+    presets = {p["id"]: p["pattern"] for p in api.get(f"{t}/reading")["presets"]}
+    api.put(
+        f"{t}/reading",
+        {
+            "enabled": True,
+            "channels": ["email"],
+            "read_category": True,
+            "min_confidence": 0.6,
+            "fields": [
+                {
+                    "key": "orderNumber",
+                    "label": "Order number",
+                    "description": (
+                        "the order number of the order the customer is writing about now"
+                    ),
+                    "pattern": presets["code"],
+                }
+            ],
+        },
+    )
     seed_email(api, t, tenant["id"])
 
     if with_ai:

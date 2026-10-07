@@ -1839,3 +1839,43 @@ a.tab {
   border-color: var(--danger);
   color: var(--danger);
 }
+
+/* ----- reading messages ----- */
+
+.reader-status {
+  font-size: 0.9rem;
+}
+.reader-status.warn {
+  border-left: 4px solid var(--note-border);
+}
+.reading-field {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+}
+.code-input {
+  font-family: var(--mono);
+}
+.reading-fields {
+  list-style: none;
+  margin: 0.25rem 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.reading-fields li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.reading-review {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+.flow-node.kind-reader {
+  border-left-color: var(--accent);
+  border-left-style: double;
+  border-left-width: 5px;
+}

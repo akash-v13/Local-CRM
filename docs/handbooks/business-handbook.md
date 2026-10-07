@@ -39,6 +39,7 @@ Every screenshot uses a made-up demo shop called *Northwind Outfitters*. Ask who
 - [B5. How AI replies are written (prompt templates)](#b5-how-ai-replies-are-written-prompt-templates)
 - [B6. Testing AI before you change anything](#b6-testing-ai-before-you-change-anything)
 - [B7. Connecting your email inbox](#b7-connecting-your-email-inbox)
+- [B8. Reading messages](#b8-reading-messages)
 
 **Part C: Recipes and reference**
 
@@ -504,6 +505,42 @@ Set the model per queue under **Queues → Handling**, after comparing them in t
 - **Microsoft 365 and Outlook.com** aren't supported yet. Microsoft only allows sign-in with OAuth there, which is planned.
 - **Attachments** are listed on the message (name and size), but the files themselves aren't stored yet.
 
+## B8. Reading messages
+
+Emails don't come with an order number field or a category. **Operations → Reading** fixes that. Before your connected systems are called, the platform reads the customer's message and:
+- **finds the fields you define**, such as the order number, and saves them on the case, so the shop lookup, routing and compensation rules work for email cases too;
+- **chooses the category** from the tone and context, when the customer didn't pick one.
+
+![Reading settings, with a test](images/reading-settings.png)
+
+**How it works:**
+- **Candidates:** for each field you describe what it looks like (e.g. *letters then digits, like NW-10211*). The platform finds every match in the message.
+- **Choosing:** an AI model picks which match is the one you mean, e.g. "the order the customer is writing about **now**", not an older order they mention. It can only choose from what's actually in the message, so it can't invent a number.
+- **Confidence:** answers above your confidence level are saved. Anything less certain is shown on the case for an agent to confirm.
+
+**To set it up:**
+1. Tick **Read new cases' messages** and choose the **channels** (email by default).
+2. **Add a field** for each detail you need:
+   - **Key:** what connectors and rules use, e.g. `orderNumber`.
+   - **Label:** what people see, e.g. *Order number*.
+   - **Looks like:** pick a ready-made pattern, or write your own.
+   - **What the model should look for:** describe it in plain words.
+3. Try it in **Test it**: paste an email (or pick a real case), click **Read it**, and check each value and how sure it was. Adjust the **confidence** slider until confident answers are right, then **Save**.
+
+**On a case**, the **Read from the message** card shows what was found:
+
+![Read from the message](images/reading-case.png)
+
+- **Found values** show how sure the model was.
+- **"Which one?"** means the model wasn't sure. Click the right value, then **Re-run enrichment** so your systems look it up.
+- **Suggested category:** click **Apply**, then **Run routing again**.
+
+In **Pipeline → Executions**, this is step **⓪ Read the message**, with the candidates it chose from:
+
+![Step 0 in a case's run](images/pipeline-execution-reading.png)
+
+**Which model reads?** *Jev* (TypeSafe AI's decision model) when your administrator has set a TypeSafe key: about $0.00003 a message. Otherwise *Claude*, about $0.001 a message. With neither key, a field is filled only when exactly one match is found, and no category is chosen. Personal details (names, email addresses, phone numbers) are hidden from the model.
+
 # Part C: Recipes and reference
 
 ## C1. Recipes
@@ -555,6 +592,7 @@ Create a rule *Weather delays: no compensation* with the condition *Shipping tra
 
 | Question | Answer |
 |---|---|
+| An email case has no order number. | Check **Operations → Reading** is on for email and has an *Order number* field. If the case's **Read from the message** card says "Which one?", pick the right number and click **Re-run enrichment**. |
 | Customer emails aren't becoming cases. | Check **Operations → Email**: the inbox must be *Connected* and active. A problem (e.g. wrong password, IMAP turned off) is shown there. Emails older than the inbox's start date, auto-replies and mailing lists are skipped on purpose. |
 | My email reply shows "Email failed". | The reason is under the message. Usually the inbox's app password changed: update it under **Operations → Email**, then click **Retry** on the message. |
 | A case is in the wrong queue. | Use **Move to queue…** on the case (A6). If it keeps happening, fix the queue conditions (B2) and test them with **Test with a real case**. |

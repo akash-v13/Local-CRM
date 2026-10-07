@@ -125,6 +125,9 @@ class CaseRead(BaseModel):
     sla: dict[str, Any]
     enrichment: dict[str, Any]
     decisions: dict[str, Any]
+    extraction: dict[str, Any] = Field(
+        default_factory=dict, description="What was read from the customer's message."
+    )
     queue_id: uuid.UUID | None
     queue: QueueSummary | None
     assignee_type: str | None
@@ -1130,6 +1133,10 @@ class PipelineRule(BaseModel):
 class PipelineDefinition(BaseModel):
     """What every new case goes through, in order, before an agent picks it up."""
 
+    reading: dict[str, Any] | None = Field(
+        default=None,
+        description="Step 0 when on: channels, model (jev / claude / patterns), fields, category.",
+    )
     connectors: list[PipelineConnectorStep]
     inactive_connectors: list[str]
     queues: list[PipelineQueue]
@@ -1172,6 +1179,9 @@ class ExecutionSummary(BaseModel):
     queue_name: str | None
     compensation_status: str | None
     compensation_label: str | None
+    reading: dict[str, Any] | None = Field(
+        default=None, description="What was read from the message (case.extraction), if anything."
+    )
 
 
 class ExecutionRouting(BaseModel):
@@ -1265,3 +1275,71 @@ class MailboxRecentCase(BaseModel):
     status: str
     customer_email: str
     subject: str | None
+
+
+# ----- reading messages (fields + category) ----------------------------------------------
+
+
+class ReadingField(BaseModel):
+    """A value to pull out of customer messages and save as `attributes.<key>`."""
+
+    key: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,59}$", description='e.g. "orderNumber".')
+    label: str = Field(min_length=1, max_length=100, description='e.g. "Order number".')
+    description: str = Field(
+        min_length=3,
+        max_length=300,
+        description='What the model looks for, e.g. "the order number of the order the customer '
+        'is writing about".',
+    )
+    pattern: str = Field(min_length=1, max_length=300, description="Regex for candidates.")
+
+    @model_validator(mode="after")
+    def _check(self) -> "ReadingField":
+        from app.ai.reading import pattern_problem
+
+        problem = pattern_problem(self.pattern)
+        if problem:
+            raise ValueError(f"{self.label}: {problem}")
+        return self
+
+
+Channel = Literal["email", "webform", "chat", "api"]
+
+
+class ReadingSettingsData(BaseModel):
+    enabled: bool = False
+    channels: list[Channel] = Field(default_factory=lambda: list[Channel](["email"]))
+    read_category: bool = Field(
+        default=True, description="Choose a category when the customer didn't pick one."
+    )
+    min_confidence: float = Field(
+        default=0.6, ge=0, le=1, description="Below this, a person confirms the value."
+    )
+    fields: list[ReadingField] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def _unique(self) -> "ReadingSettingsData":
+        keys = [f.key for f in self.fields]
+        if len(keys) != len(set(keys)):
+            raise ValueError("Each field needs a different key.")
+        return self
+
+
+class ReadingPreviewRequest(BaseModel):
+    subject: str = ""
+    message: str = Field(default="", max_length=20_000)
+    case_number: int | None = Field(default=None, description="Read a real case's message instead.")
+    settings: ReadingSettingsData | None = Field(
+        default=None, description="Unsaved settings to try."
+    )
+
+
+class FieldReview(BaseModel):
+    value: str = Field(min_length=1, max_length=200)
+    actor_id: str = Field(min_length=1)
+
+
+class CategoryChange(BaseModel):
+    category: CategoryIn
+    actor_id: str = Field(min_length=1)
+    reason: str | None = None

@@ -58,6 +58,8 @@ class Case(IdMixin, CreatedAtMixin, Base):
     sla: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
     enrichment: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
     decisions: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    # What was read from the customer's message (fields, category, model, confidence).
+    extraction: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
 
     # Assignment — who/where the case currently is. History is in case_events.
     queue_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("queues.id", ondelete="SET NULL"))

@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 
 import { api } from "../api/client";
 import { CompensationCard } from "../components/CompensationCard";
+import { ReadingCard } from "../components/ReadingCard";
 import { EnrichmentCard } from "../components/EnrichmentCard";
 import { EventTimeline } from "../components/EventTimeline";
 import { NeedsTenant } from "../components/Layout";
@@ -143,6 +144,13 @@ export function CaseDetailPage() {
               <dd>{c.version}</dd>
             </dl>
           </div>
+
+          {"fields" in c.extraction && (
+            <div className="card">
+              <h2>Read from the message</h2>
+              <ReadingCard caseDetail={c} agentId={agentId} onChanged={refresh} />
+            </div>
+          )}
 
           <div className="card">
             <h2>Enrichment</h2>
