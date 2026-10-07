@@ -22,6 +22,10 @@ import type {
   CompensationRuleInput,
   CompensationSettings,
   CostProjection,
+  Mailbox,
+  MailboxRecentCase,
+  MailboxTestResult,
+  MailboxWrite,
   ExecutionDetail,
   ExecutionOutcome,
   ExecutionSummary,
@@ -183,6 +187,21 @@ export const api = {
     put<Credential>(`/tenants/${tenantId}/credentials/${id}`, input),
   testCredential: (tenantId: string, id: string) =>
     post<TokenTestResult>(`/tenants/${tenantId}/credentials/${id}/test`, {}),
+
+  // Email channel
+  listMailboxes: (tenantId: string) => request<Mailbox[]>(`/tenants/${tenantId}/mailboxes`),
+  getMailbox: (tenantId: string, id: string) => request<Mailbox>(`/tenants/${tenantId}/mailboxes/${id}`),
+  createMailbox: (tenantId: string, input: MailboxWrite) =>
+    post<Mailbox>(`/tenants/${tenantId}/mailboxes`, input),
+  replaceMailbox: (tenantId: string, id: string, input: MailboxWrite) =>
+    put<Mailbox>(`/tenants/${tenantId}/mailboxes/${id}`, input),
+  testMailbox: (tenantId: string, draft: MailboxWrite, mailboxId?: string) =>
+    post<MailboxTestResult>(`/tenants/${tenantId}/mailboxes/test`, { draft, mailbox_id: mailboxId ?? null }),
+  checkMailbox: (tenantId: string, id: string) => post<Mailbox>(`/tenants/${tenantId}/mailboxes/${id}/check`, {}),
+  mailboxRecent: (tenantId: string, id: string) =>
+    request<MailboxRecentCase[]>(`/tenants/${tenantId}/mailboxes/${id}/recent`),
+  retrySend: (tenantId: string, caseNumber: number, messageId: string) =>
+    post<Message>(`/tenants/${tenantId}/cases/${caseNumber}/messages/${messageId}/retry-send`, {}),
 
   // Intake pipeline
   pipeline: (tenantId: string) => request<PipelineDefinition>(`/tenants/${tenantId}/pipeline`),

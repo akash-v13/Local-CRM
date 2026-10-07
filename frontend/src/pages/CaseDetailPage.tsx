@@ -73,7 +73,8 @@ export function CaseDetailPage() {
   const customerName = c.customer.display_name ?? c.customer.email;
   const selected = c.category.customerSelected;
   const effective = c.category.effective;
-  const attributes = Object.entries(c.attributes);
+  // The email subject is shown in the header instead.
+  const attributes = Object.entries(c.attributes).filter(([key]) => key !== "subject");
 
   return (
     <section>
@@ -85,6 +86,7 @@ export function CaseDetailPage() {
           <h1>
             Case <code>{formatCaseNumber(c.case_number)}</code> <StatusBadge status={c.status} />
           </h1>
+          {typeof c.attributes.subject === "string" && <p className="case-subject">{c.attributes.subject}</p>}
           <p className="muted">
             {formatCategory(effective)} · {c.queue?.name ?? "unrouted"} · via {c.channel} · opened{" "}
             {formatDateTime(c.created_at)}
@@ -96,7 +98,11 @@ export function CaseDetailPage() {
         <div className="case-main">
           <div className="card">
             <h2>Conversation</h2>
-            <MessageThread messages={c.messages} customerName={customerName} />
+            <MessageThread
+              messages={c.messages}
+              customerName={customerName}
+              onRetry={(m) => void api.retrySend(c.tenant_id, c.case_number, m.id).then(refresh, () => refresh())}
+            />
           </div>
           <ReplyComposer caseDetail={c} agentId={agentId} onSent={refresh} />
         </div>

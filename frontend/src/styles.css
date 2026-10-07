@@ -1823,3 +1823,19 @@ a.tab {
 .filter-bar {
   margin-top: 1rem;
 }
+
+/* ----- email ----- */
+
+.case-subject {
+  margin: 0.15rem 0 0.1rem;
+  font-weight: 600;
+}
+.message-subject {
+  margin: 0.25rem 0 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.tag.tag-fail {
+  border-color: var(--danger);
+  color: var(--danger);
+}

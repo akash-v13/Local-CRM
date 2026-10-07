@@ -14,6 +14,8 @@ import { QueueEditorPage } from "./pages/ops/QueueEditorPage";
 import { QueueListPage } from "./pages/ops/QueueListPage";
 import { CompensationListPage } from "./pages/ops/CompensationListPage";
 import { CompensationRuleEditorPage } from "./pages/ops/CompensationRuleEditorPage";
+import { MailboxEditorPage } from "./pages/ops/MailboxEditorPage";
+import { MailboxListPage } from "./pages/ops/MailboxListPage";
 import { PipelineExecutionPage } from "./pages/ops/PipelineExecutionPage";
 import { PipelineExecutionsPage, PipelinePage } from "./pages/ops/PipelinePage";
 import { PromptTemplateEditorPage } from "./pages/ops/PromptTemplateEditorPage";
@@ -33,6 +35,7 @@ import { WebformPage } from "./pages/WebformPage";
  *   /ops/queues/:id   Operations Portal: edit a queue (+ routing test)
  *   /ops/connectors[/new|/:id]    Operations Portal: enrichment connectors
  *   /ops/credentials[/new|/:id]   Operations Portal: credentials (auth for connectors)
+ *   /ops/email[/new|/:id]         Operations Portal: linked email inboxes
  *   /ops/pipeline[/executions[/:caseNumber]]  Operations Portal: intake pipeline diagram + per-case runs
  *   /ops/compensation[/new|/:id]  Operations Portal: compensation rules, guardrails, backtest
  *   /ops/templates[/<name>]       Operations Portal: Jinja prompt templates (+ preview, test lab, costs)
@@ -53,6 +56,9 @@ export function App() {
               <Route path="queues" element={<QueueListPage />} />
               <Route path="queues/new" element={<QueueEditorPage />} />
               <Route path="queues/:queueId" element={<QueueEditorPage />} />
+              <Route path="email" element={<MailboxListPage />} />
+              <Route path="email/new" element={<MailboxEditorPage />} />
+              <Route path="email/:mailboxId" element={<MailboxEditorPage />} />
               <Route path="pipeline" element={<PipelinePage />} />
               <Route path="pipeline/executions" element={<PipelineExecutionsPage />} />
               <Route path="pipeline/executions/:caseNumber" element={<PipelineExecutionPage />} />

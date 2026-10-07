@@ -224,7 +224,17 @@ class EnrichmentService:
                 return
 
             job.status = "failed"
-            case = session.get(Case, job.case_id) if job.case_id else None
+            if job.kind == "send_email":
+                from app.services.email import send_failed  # avoids an import cycle
+
+                send_failed(session, job, error)
+                session.commit()
+                return
+            case = (
+                session.get(Case, job.case_id)
+                if job.case_id and job.kind == "enrich_case"
+                else None
+            )
             if case is not None:
                 session.add(
                     CaseEvent(

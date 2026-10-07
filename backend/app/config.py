@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     connector_allow_http: bool = False
     # Largest connector response we read, in bytes.
     connector_max_response_bytes: int = 1_000_000
+    # --- Email channel (IMAP/SMTP inboxes) --------------------------------------------
+    # Mail servers that may be used even though they're private (e.g. "greenmail", the
+    # local test mail server in docker-compose). Comma-separated. Empty in production.
+    email_allowed_hosts: Annotated[list[str], NoDecode] = []
+    # Allow IMAP/SMTP without TLS (local development only, e.g. GreenMail).
+    email_allow_insecure: bool = False
+    # Seconds to wait for a mail server before giving up.
+    email_timeout_seconds: float = 20.0
+
     # --- AI reply drafting ------------------------------------------------------------
     # Anthropic API key (https://console.anthropic.com). Without it, drafting is off
     # and the UI says how to enable it.
@@ -47,7 +56,7 @@ class Settings(BaseSettings):
     # Background worker: seconds between checks for new jobs when idle.
     worker_poll_seconds: float = 1.0
 
-    @field_validator("connector_allowed_hosts", mode="before")
+    @field_validator("connector_allowed_hosts", "email_allowed_hosts", mode="before")
     @classmethod
     def _split_hosts(cls, value: object) -> object:
         if isinstance(value, str):

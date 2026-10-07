@@ -45,10 +45,12 @@ app/
 │   ├── template_tests.py Sample cases + test lab runs (executed by the worker)
 │   ├── compensation.py Compensation rules, decisions on cases, approvals, live test, backtest
 │   ├── pipeline.py   Intake pipeline view: steps + dependencies, and each case's run
+│   ├── email.py      Linked inboxes, importing emails into cases, sending replies
 │   └── routing.py    Adapts models to the pure routing logic
 ├── connectors/       Calling external APIs: runner (one request), auth (credentials,
 │                     token cache), context (what templates can see)
 ├── security/         SSRF protection, secret encryption
+├── email/            Email channel: parse.py (raw email → body, sender, threading), transport.py (IMAP/SMTP)
 ├── ai/               Reply drafting
 │   ├── engine.py     Layered Jinja templates: names, fallbacks, validation, sandboxed rendering
 │   ├── context.py    Case → the masked variables templates can use

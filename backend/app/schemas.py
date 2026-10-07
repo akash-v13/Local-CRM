@@ -78,6 +78,14 @@ class MessageRead(BaseModel):
     visibility: str
     body: str
     ai: dict[str, Any]
+    external_id: str | None = Field(
+        default=None, description="Email Message-ID, for email messages."
+    )
+    email: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Email messages: subject, from, to, threading headers, attachments; "
+        "outbound mail also has `delivery` (queued | sent | failed).",
+    )
     created_at: datetime
 
 
@@ -122,6 +130,9 @@ class CaseRead(BaseModel):
     assignee_type: str | None
     assignee_id: str | None
     assignment_pinned: bool
+    mailbox_id: uuid.UUID | None = Field(
+        default=None, description="The inbox an email case arrived at; replies are sent from it."
+    )
     version: int
     created_at: datetime
     updated_at: datetime
@@ -139,7 +150,8 @@ class CaseDetail(CaseRead):
 class MessageCreate(BaseModel):
     kind: Literal["agent_reply", "internal_note", "customer_reply"] = Field(
         description=(
-            "agent_reply: sent to the customer (simulated for now). "
+            "agent_reply: sent to the customer (emailed from the case's inbox for email cases; "
+            "simulated otherwise). "
             "internal_note: agents only. "
             "customer_reply: simulates the customer writing back (for testing)."
         )
@@ -1172,3 +1184,84 @@ class ExecutionDetail(ExecutionSummary):
     routing: ExecutionRouting
     compensation: dict[str, Any] | None
     enriched_at: datetime | None
+
+
+# ----- email channel (linked inboxes) ----------------------------------------------------
+
+MailSecurity = Literal["ssl", "starttls", "none"]
+MailProvider = Literal["gmail", "icloud", "yahoo", "fastmail", "zoho", "custom"]
+
+
+class MailboxBase(BaseModel):
+    name: str = Field(min_length=1, max_length=200, description='e.g. "Support inbox".')
+    address: EmailStr = Field(description="The inbox address customers write to.")
+    display_name: str | None = Field(
+        default=None,
+        max_length=200,
+        description='Sender name on replies, e.g. "Northwind Support".',
+    )
+    is_active: bool = True
+    provider: MailProvider = "custom"
+    imap_host: str = Field(min_length=1, max_length=255)
+    imap_port: int = Field(default=993, ge=1, le=65535)
+    imap_security: MailSecurity = "ssl"
+    smtp_host: str = Field(min_length=1, max_length=255)
+    smtp_port: int = Field(default=465, ge=1, le=65535)
+    smtp_security: MailSecurity = "ssl"
+    username: str = Field(min_length=1, max_length=320, description="Usually the address.")
+    folder: str = Field(default="INBOX", min_length=1, max_length=200)
+    mark_as_read: bool = Field(default=False, description="Mark imported emails as read.")
+    poll_interval_seconds: int = Field(default=60, ge=30, le=3600)
+    default_category: CategoryIn | None = Field(
+        default=None, description="Category for new cases (emails have none of their own)."
+    )
+
+
+class MailboxWrite(MailboxBase):
+    """Create or replace an inbox. `password` is write-only: required when creating,
+    omit it (null) to keep the stored one."""
+
+    password: str | None = Field(default=None, max_length=500)
+    backfill_days: int = Field(
+        default=0,
+        ge=0,
+        le=90,
+        description="When creating: also import emails from the last N days.",
+    )
+
+
+class MailboxRead(MailboxBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    password_set: bool = True
+    import_since: datetime
+    last_checked_at: datetime | None
+    last_success_at: datetime | None
+    last_error: str | None
+    imported_total: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class MailboxTestRequest(BaseModel):
+    draft: MailboxWrite
+    mailbox_id: uuid.UUID | None = Field(
+        default=None,
+        description="Editing an existing inbox: use its stored password if none given.",
+    )
+
+
+class MailboxTestResult(BaseModel):
+    imap_ok: bool
+    smtp_ok: bool
+    imap_detail: str
+    smtp_detail: str
+
+
+class MailboxRecentCase(BaseModel):
+    case_number: int
+    created_at: datetime
+    status: str
+    customer_email: str
+    subject: str | None

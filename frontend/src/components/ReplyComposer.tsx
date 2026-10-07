@@ -13,7 +13,7 @@ const MODES: { id: Mode; label: string; kind: MessageKind }[] = [
 ];
 
 const HINTS: Record<Mode, string> = {
-  reply: "Saved to the case as sent. Not actually emailed yet (simulated).",
+  reply: "Saved to the case as sent. Not emailed: this case didn't come in by email (simulated).",
   note: "Only visible to agents.",
   customer: "Testing tool: pretends the customer wrote back. Reopens a solved case.",
 };
@@ -116,7 +116,13 @@ export function ReplyComposer({ caseDetail, agentId, onSent }: Props) {
         }} />
       )}
 
-      <p className="hint">{modeBlocked ? "Closed cases only accept internal notes." : HINTS[mode]}</p>
+      <p className="hint">
+        {modeBlocked
+          ? "Closed cases only accept internal notes."
+          : mode === "reply" && caseDetail.mailbox_id
+            ? `Emailed to ${caseDetail.customer.email} from the inbox this case came in on, in the same email thread.`
+            : HINTS[mode]}
+      </p>
       {error && <p className="error" role="alert">{error}</p>}
 
       <div className="actions">

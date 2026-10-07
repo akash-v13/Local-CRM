@@ -65,6 +65,10 @@ class Case(IdMixin, CreatedAtMixin, Base):
     assignee_type: Mapped[str | None] = mapped_column(String(16))  # human | ai
     assignee_id: Mapped[str | None] = mapped_column(String(100))
     assignment_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Cases that came in by email: the inbox they arrived at (replies are sent from it).
+    mailbox_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("mailboxes.id", ondelete="SET NULL")
+    )
 
     version: Mapped[int] = mapped_column(Integer)
 

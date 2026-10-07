@@ -38,6 +38,7 @@ Every screenshot uses a made-up demo shop called *Northwind Outfitters*. Ask who
 - [B4. Compensation rules](#b4-compensation-rules)
 - [B5. How AI replies are written (prompt templates)](#b5-how-ai-replies-are-written-prompt-templates)
 - [B6. Testing AI before you change anything](#b6-testing-ai-before-you-change-anything)
+- [B7. Connecting your email inbox](#b7-connecting-your-email-inbox)
 
 **Part C: Recipes and reference**
 
@@ -158,11 +159,21 @@ The reply box under the conversation has three tabs:
 
 | Tab | What it does |
 |---|---|
-| **Reply to customer** | Sends your message to the customer. For now, sending is *simulated*: the reply is saved on the case but not emailed. |
+| **Reply to customer** | Sends your message to the customer. On cases that came in **by email**, it's emailed from the same inbox, in the same email thread. On other cases (webform, API), sending is *simulated*: the reply is saved on the case but not emailed. |
 | **Internal note** | Saves a note only your team can see. |
 | **Simulate customer reply** | Testing only: pretends the customer wrote back. |
 
 **Send & mark solved** sends your reply and closes out the case in one step.
+
+**Email cases** show the email's subject at the top and on the customer's message. Your reply shows whether the email went out:
+
+![An email case, answered by email](images/email-case.png)
+
+- **✓ Emailed to…**: delivered to the customer's mail server.
+- **Sending email / Retrying email**: in progress. Failed attempts are retried automatically.
+- **✗ Email failed**: the reason is shown under the message. Fix the cause (often the inbox password, see [B7](#b7-connecting-your-email-inbox)), then click **Retry**.
+
+When the customer answers your email, their reply lands on the same case, without the quoted history, and reopens the case if it was solved.
 
 **The Status card** only offers the moves that are allowed from the case's current status, so you can't put a case in an impossible state.
 
@@ -464,6 +475,35 @@ Set the model per queue under **Queues → Handling**, after comparing them in t
 
 ---
 
+## B7. Connecting your email inbox
+
+**Operations → Email** connects your support inbox, e.g. `support@yourshop.com`. Once it's connected:
+- **New emails become cases.** Every new email from a customer becomes a case, whether you've already read it in your mail app or not.
+- **Replies stay together.** A customer's reply to an existing conversation joins that case instead of opening a new one.
+- **Agent replies are emailed** from the same inbox, in the same thread, so the customer sees one conversation in their mail app.
+
+![Connected inboxes](images/email-inboxes.png)
+
+**To connect an inbox:**
+
+1. **Connect inbox** → choose your **email provider**. Gmail / Google Workspace, iCloud, Yahoo, Fastmail and Zoho fill in the server settings for you. For any other host, choose *Other* and enter its IMAP and SMTP settings.
+2. **Create an app password** with your provider (the help text links to the right page). Paste it into **App password**. It's stored encrypted and never shown again.
+3. Choose **what to import**:
+   - **Start from** "now on", or also the last 1, 7 or 30 days.
+   - **Check every:** how often the inbox is checked.
+   - **Mark emails as read:** optional. By default the inbox is left untouched.
+   - **Category for new cases:** optional, since emails don't come with one.
+4. **Test connection**. It signs in to both reading (IMAP) and sending (SMTP) without saving or importing anything. Then **Connect inbox**.
+
+![Inbox settings](images/email-inbox-editor.png)
+
+**Good to know:**
+- **Skipped automatically:** emails from the inbox itself, auto-replies and out-of-office messages, bounces, mailing lists and "no-reply" senders. This stops two systems replying to each other forever.
+- **No duplicates.** An email is never imported twice, even if your provider renumbers the folder.
+- **Checking right away:** **Check now** checks immediately. **Status** shows when the inbox was last checked, and any problem in plain words (e.g. a wrong password).
+- **Microsoft 365 and Outlook.com** aren't supported yet. Microsoft only allows sign-in with OAuth there, which is planned.
+- **Attachments** are listed on the message (name and size), but the files themselves aren't stored yet.
+
 # Part C: Recipes and reference
 
 ## C1. Recipes
@@ -515,6 +555,8 @@ Create a rule *Weather delays: no compensation* with the condition *Shipping tra
 
 | Question | Answer |
 |---|---|
+| Customer emails aren't becoming cases. | Check **Operations → Email**: the inbox must be *Connected* and active. A problem (e.g. wrong password, IMAP turned off) is shown there. Emails older than the inbox's start date, auto-replies and mailing lists are skipped on purpose. |
+| My email reply shows "Email failed". | The reason is under the message. Usually the inbox's app password changed: update it under **Operations → Email**, then click **Retry** on the message. |
 | A case is in the wrong queue. | Use **Move to queue…** on the case (A6). If it keeps happening, fix the queue conditions (B2) and test them with **Test with a real case**. |
 | A case went to General instead of my queue. | No other queue's conditions matched. In the queue editor, **Test with a real case** shows which condition failed and what the case actually had. |
 | Enrichment shows an error. | The other system didn't answer. Try **Re-run enrichment**. If it persists, check **Pipeline → Executions** for the error and send it to your technical team ([Integration guide §9](integration-guide.md#9-watching-executions-and-troubleshooting)). |
@@ -528,7 +570,7 @@ Create a rule *Weather delays: no compensation* with the condition *Shipping tra
 ## C4. What's not built yet
 
 - **Sign-in.** The business picker and "Acting as" box are temporary.
-- **Real email sending and receiving.** Replies are saved but not emailed, and "Simulate customer reply" stands in for real replies.
+- **Email for Microsoft 365 / Outlook.com, and attachment files.** Inboxes connect with an app password (Gmail, iCloud, Yahoo, Fastmail, Zoho, other IMAP hosts). Attachments are listed but not stored. Webform and API cases still have simulated replies.
 - **Paying compensation.** Approving records the decision, but money isn't sent automatically.
 - **SLA timers, automatic escalation and auto-close.** SLA hours and the reopen window are saved on queues but not enforced yet, so Solved cases aren't closed automatically.
 - **AI sending replies on its own.** The setting exists, but every draft still needs a person.

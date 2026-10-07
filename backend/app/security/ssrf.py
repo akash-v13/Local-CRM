@@ -62,6 +62,20 @@ def check_url(
         port = parts.port or (443 if parts.scheme == "https" else 80)
     except ValueError as exc:
         raise UnsafeUrlError("URL has an invalid port.") from exc
+    check_host(host, port, allowed_hosts=(), resolve=resolve)
+
+
+def check_host(
+    host: str,
+    port: int,
+    *,
+    allowed_hosts: Collection[str],
+    resolve: Resolver = resolve_host,
+) -> None:
+    """Raise UnsafeUrlError unless `host` resolves only to public internet addresses
+    (or is explicitly allowed). Used for connector URLs and mail servers."""
+    if host.lower() in {h.lower() for h in allowed_hosts}:
+        return
     try:
         addresses = resolve(host, port)
     except OSError as exc:
@@ -74,5 +88,5 @@ def check_url(
         if not ip.is_global or ip.is_multicast:
             raise UnsafeUrlError(
                 f"'{host}' resolves to a private or reserved address ({ip}); "
-                "connectors may only call public internet addresses."
+                "only public internet addresses are allowed."
             )

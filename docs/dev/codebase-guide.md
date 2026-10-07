@@ -1,6 +1,6 @@
 # Codebase Guide
 
-How the code is organized, why, and how to add to it. Sections 1–6 cover the backend in general, section 7 the frontend (details in [frontend/README.md](../../frontend/README.md)), sections 8–13 each feature (routing, reporting, enrichment, AI drafting, compensation, pipeline view), and section 14 lists the API endpoints.
+How the code is organized, why, and how to add to it. Sections 1–6 cover the backend in general, section 7 the frontend (details in [frontend/README.md](../../frontend/README.md)), sections 8–14 each feature (routing, reporting, enrichment, AI drafting, compensation, pipeline view, email channel), and section 15 lists the API endpoints.
 
 ## 1. The layers
 
@@ -89,7 +89,7 @@ Say we want **"reroute a case to another queue"** (Idea 8: manual reroute that p
 |---|---|
 | Authentication / tenant from token | `api/` dependency replacing the `tenant_id` path parameter |
 | Payouts (issuing compensation) | payout connectors with idempotency keys; the matrix already decides what to pay |
-| Real email / channel connectors (send and receive) | replaces the simulated send and "Simulate customer reply" |
+| Inbox OAuth (Google Workspace, Microsoft 365) | an OAuth credential type for `ImapSmtpTransport` (XOAUTH2) |
 | SLA timers, approvals, AI auto-send | settings already saved on queues; enforcement not built |
 | AI recategorization | Idea 8 in the product ideas log |
 
@@ -258,7 +258,30 @@ Operations → Pipeline draws what every new case goes through, and what happene
 
 Steps run strictly in sequence today. Parallel branches would mean changing `EnrichmentService.enrich_case` to group steps by dependency; the diagram already knows the dependencies.
 
-## 14. API endpoints
+## 14. Email channel
+
+```mermaid
+flowchart LR
+    Inbox[(Business inbox)] -- IMAP, every N s --> Poll["poll_mailbox job"]
+    Poll --> Parse["parse_email<br/>skip own / automatic / old / duplicate"]
+    Parse --> Thread{"Replies to a case?<br/>In-Reply-To / References,<br/>or [Case N] from that customer"}
+    Thread -- yes --> Reply["customer_reply on the case<br/>(reopens if solved)"]
+    Thread -- no --> New["new case, channel email"]
+    Agent[Agent reply on an email case] --> Send["send_email job<br/>retries with backoff"] -- SMTP --> Customer([Customer])
+```
+
+| Piece | Where | Notes |
+|---|---|---|
+| Parsing | `app/email/parse.py` (pure) | Body (HTML → text when there's no text part), sender, threading headers, attachments (names/sizes), automatic-message detection (Auto-Submitted, auto-reply headers, bulk/list, bounces, no-reply), quoted-history stripping, `[Case N]` subject token. |
+| Mail servers | `app/email/transport.py` | `MailTransport` interface (fetch / send / test); `ImapSmtpTransport` on imaplib/smtplib. TLS required unless `EMAIL_ALLOW_INSECURE`; hosts must be public unless in `EMAIL_ALLOWED_HOSTS` (same check as connectors). Reads with `BODY.PEEK`, so nothing is marked read unless the inbox asks for it. |
+| Inboxes | `models/mailbox.py`, `MailboxService` | Address, servers, encrypted (write-only) password, folder, `import_since` (link time minus backfill), poll interval, default category, IMAP position (`uid_validity`, `last_uid`) and status (last check, last error, imported count). |
+| Importing | `services/email.py` `poll_mailbox`, `ingest_message` | Inbox settings read, then the session closed while IMAP runs; each email in its own transaction. Duplicates stopped by Message-ID (unique index on `messages(tenant_id, external_id)`). A reply to a closed case opens a new case with `attributes.relatedCase`. |
+| Scheduling | `schedule_polls` in the worker loop | Every 5 s, queues a `poll_mailbox` job for each active inbox that's due and doesn't already have one. |
+| Sending | `CaseService.add_message` → `send_email` job | Agent replies on cases with a `mailbox_id` get a Message-ID, `Re: <subject> [Case N]`, In-Reply-To/References, and `email.delivery` (queued → sent / retrying → failed). Up to 5 attempts with backoff; a sent status is checked first so a retry never resends. Failed emails can be retried from the case. |
+
+Not built yet: OAuth sign-in for Google Workspace / Microsoft 365, storing attachment files, sending from an inbox on non-email cases.
+
+## 15. API endpoints
 
 Full, always-current reference: http://localhost:8000/docs.
 
@@ -306,6 +329,12 @@ Full, always-current reference: http://localhost:8000/docs.
 | POST | `/tenants/{t}/compensation/simulate` | Backtest over the last N days (optionally with an unsaved rule) |
 | POST | `/tenants/{t}/cases/{c}/compensation/decide` | Run the matrix again for a case |
 | POST | `/tenants/{t}/cases/{c}/compensation/approve`, `/reject` | Review a pending decision (`note` required to reject) |
+| GET, POST | `/tenants/{t}/mailboxes` | List / connect inboxes (password write-only) |
+| GET, PUT | `/tenants/{t}/mailboxes/{id}` | Read / replace (omit `password` to keep it; `is_active: false` pauses) |
+| POST | `/tenants/{t}/mailboxes/test` | Sign in to IMAP and SMTP with unsaved settings |
+| POST | `/tenants/{t}/mailboxes/{id}/check` | Check for new email now |
+| GET | `/tenants/{t}/mailboxes/{id}/recent` | Latest cases created from the inbox |
+| POST | `/tenants/{t}/cases/{c}/messages/{m}/retry-send` | Send a failed email again |
 | GET | `/tenants/{t}/pipeline` | The intake pipeline: steps in order, dependencies, problems, queues, rules |
 | GET | `/tenants/{t}/pipeline/executions?outcome=&limit=` | Recent cases' runs (per-step status, time, queue, compensation) |
 | GET | `/tenants/{t}/pipeline/executions/{c}` | One case's run with requests, data, routing and compensation |

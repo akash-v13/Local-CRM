@@ -89,6 +89,8 @@ export interface Case {
   assignee_type: string | null;
   assignee_id: string | null;
   assignment_pinned: boolean;
+  /** Email cases: the inbox they arrived at; replies are sent from it. */
+  mailbox_id: string | null;
   version: number;
   created_at: string;
   updated_at: string;
@@ -103,7 +105,21 @@ export interface Message {
   visibility: "public" | "draft" | "internal";
   body: string;
   ai: Record<string, unknown>;
+  /** Email messages: the Message-ID. */
+  external_id: string | null;
+  /** Email messages: subject, from, to, threading, attachments; outbound mail has `delivery`. */
+  email: EmailDetails;
   created_at: string;
+}
+
+export interface EmailDetails {
+  subject?: string;
+  from?: string;
+  from_name?: string | null;
+  to?: string[];
+  attachments?: { filename: string; content_type: string; size: number }[];
+  mailbox_address?: string;
+  delivery?: { status: "queued" | "retrying" | "sent" | "failed"; attempts?: number; error: string | null; sent_at: string | null };
 }
 
 export interface CaseDetail extends Case {
@@ -740,4 +756,62 @@ export interface ExecutionDetail extends ExecutionSummary {
   routing: { queue_name: string | null; matched_conditions: string[]; routed_at: string | null };
   compensation: CompensationDecision | null;
   enriched_at: string | null;
+}
+
+// ----- email channel -----
+
+export type MailSecurity = "ssl" | "starttls" | "none";
+export type MailProvider = "gmail" | "icloud" | "yahoo" | "fastmail" | "zoho" | "custom";
+
+export interface MailboxBase {
+  name: string;
+  address: string;
+  display_name: string | null;
+  is_active: boolean;
+  provider: MailProvider;
+  imap_host: string;
+  imap_port: number;
+  imap_security: MailSecurity;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_security: MailSecurity;
+  username: string;
+  folder: string;
+  mark_as_read: boolean;
+  poll_interval_seconds: number;
+  default_category: CategorySelection | null;
+}
+
+export interface MailboxWrite extends MailboxBase {
+  /** Write-only. Required when creating; null keeps the stored one. */
+  password: string | null;
+  /** When creating: also import emails from the last N days. */
+  backfill_days: number;
+}
+
+export interface Mailbox extends MailboxBase {
+  id: string;
+  password_set: boolean;
+  import_since: string;
+  last_checked_at: string | null;
+  last_success_at: string | null;
+  last_error: string | null;
+  imported_total: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MailboxTestResult {
+  imap_ok: boolean;
+  smtp_ok: boolean;
+  imap_detail: string;
+  smtp_detail: string;
+}
+
+export interface MailboxRecentCase {
+  case_number: number;
+  created_at: string;
+  status: CaseStatus;
+  customer_email: string;
+  subject: string | null;
 }

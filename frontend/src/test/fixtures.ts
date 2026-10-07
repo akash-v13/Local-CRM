@@ -27,6 +27,7 @@ export function makeCase(overrides: Partial<CaseDetail> = {}): CaseDetail {
     assignee_type: "human",
     assignee_id: "agent.alex",
     assignment_pinned: false,
+    mailbox_id: null,
     version: 3,
     created_at: "2026-09-28T14:05:12Z",
     updated_at: "2026-09-28T14:05:12Z",

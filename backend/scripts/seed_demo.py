@@ -20,13 +20,17 @@ All names, emails and orders are made up.
 """
 
 import argparse
+import smtplib
 import sys
 import time
+from email.message import EmailMessage
 from typing import Any
 
 import httpx
 
 MOCKS = "http://mocks:8100"  # how the API/worker reach the mock API inside docker-compose
+MAIL_HOST = "mail"  # the test mail server, as the API/worker reach it inside docker-compose
+LOCAL_SMTP = ("localhost", 3025)  # the same server, from this machine
 AGENT = "agent.alex"
 MANAGER = "manager.sam"
 
@@ -440,6 +444,8 @@ def seed(api: Api, with_ai: bool) -> None:
     move(cases["question"], "AssignedAgent")
     message(cases["question"], "customer_reply", "Also, is the blue one back in stock?")
 
+    seed_email(api, t, tenant["id"])
+
     if with_ai:
         for key_ in ("merchant", "weather"):
             api.post(f"{t}/cases/{cases[key_]}/drafts", {"actor_id": AGENT})
@@ -452,6 +458,69 @@ def seed(api: Api, with_ai: bool) -> None:
         ("weather: no compensation", "weather"),
     ]:
         print(f"  {label}: http://localhost:5173/cases/{cases[key_]}")
+
+
+def seed_email(api: Api, t: str, tenant_id: str) -> None:
+    """Connect an inbox on the local test mail server and email it as two customers.
+    Skipped (with a note) if the mail server isn't running."""
+    inbox = f"support-{tenant_id[:8]}@northwind.example.com"
+    try:
+        smtplib.SMTP(*LOCAL_SMTP, timeout=3).quit()
+    except OSError:
+        print("  email: skipped (start the test mail server: docker compose up -d mail)")
+        return
+    box = api.post(
+        f"{t}/mailboxes",
+        {
+            "name": "Support inbox",
+            "address": inbox,
+            "display_name": "Northwind Support",
+            "provider": "custom",
+            "imap_host": MAIL_HOST,
+            "imap_port": 3143,
+            "imap_security": "none",
+            "smtp_host": MAIL_HOST,
+            "smtp_port": 3025,
+            "smtp_security": "none",
+            "username": inbox,
+            "password": "demo-password",
+            "poll_interval_seconds": 30,
+            "default_category": {
+                "type": "Complaint",
+                "category": "Delivery",
+                "subcategory": "Late delivery",
+            },
+        },
+    )
+    emails = [
+        (
+            "Priya Patel <priya.patel@example.com>",
+            "Order NW-10211 is over a week late",
+            "Hello,\n\nMy order NW-10211 was due last Thursday and still hasn't arrived. "
+            "It was a gift. Can you tell me where it is?\n\nThanks,\nPriya",
+        ),
+        (
+            "Marcus Lee <marcus.lee@example.com>",
+            "Where is my parcel?",
+            "Hi, tracking for order NW-10207 hasn't moved in five days. What's going on?",
+        ),
+    ]
+    with smtplib.SMTP(*LOCAL_SMTP, timeout=10) as smtp:
+        for sender, subject, body in emails:
+            msg = EmailMessage()
+            msg["From"], msg["To"], msg["Subject"] = sender, inbox, subject
+            msg.set_content(body)
+            smtp.send_message(msg)
+    api.post(f"{t}/mailboxes/{box['id']}/check")
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        if api.get(f"{t}/mailboxes/{box['id']}")["imported_total"] >= len(emails):
+            print(f"  email: inbox {inbox} connected, {len(emails)} customer emails imported ✓")
+            return
+        time.sleep(1)
+    print(
+        "  email: inbox connected, but emails weren't imported within 60s (is the worker running?)"
+    )
 
 
 def main() -> None:

@@ -9,8 +9,9 @@ Written for someone who knows DocumentDB/MongoDB and is new to Postgres, SQLAlch
 | `tenants` | Businesses using the platform | Every other table has a `tenant_id` |
 | `customers` | People who contact a business | Unique per tenant by email |
 | `queues` | Where cases wait: priority, match rules, handling settings (incl. AI model) | Deactivated, never deleted |
-| `cases` | The case: status, queue, category, `attributes`, `enrichment`, `decisions` (compensation) | Public **case number** (Unix µs); optimistic locking via `version` |
-| `messages` | Customer messages, agent replies, internal notes, AI drafts | AI drafts carry `ai` details (templates used, cost, checks) |
+| `cases` | The case: status, queue, category, `attributes`, `enrichment`, `decisions` (compensation), `mailbox_id` (email cases) | Public **case number** (Unix µs); optimistic locking via `version` |
+| `messages` | Customer messages, agent replies, internal notes, AI drafts | AI drafts carry `ai` details; email messages carry `external_id` (Message-ID, unique per tenant) and `email` (subject, headers, delivery status) |
+| `mailboxes` | Linked email inboxes (IMAP/SMTP) | Password encrypted; IMAP position (`uid_validity`, `last_uid`) and status |
 | `case_events` | Audit trail | Append-only |
 | `compensation_rules` | The compensation matrix: conditions + outcome per rule | Decisions live on the case in `decisions.compensation`; guardrails in `tenants.compensation_settings` |
 | `connectors` | API calls that enrich cases | Request, auth, field mapping, conditions |

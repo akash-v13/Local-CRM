@@ -176,6 +176,29 @@ Failure testing: order numbers containing `404`, `500` or `SLOW` make the mock A
 4. Submit a second case with the same email: it's a **repeat claim**, so it waits for approval. Approve or reject it on the case page.
 5. With AI drafting on, a draft for the first case mentions the refund; the second case's draft won't until it's approved.
 
+### Try the email channel
+
+The stack includes **GreenMail**, a throwaway mail server (SMTP on `localhost:3025`, IMAP on `localhost:3143`; any address works and any password is accepted).
+
+1. **Operations → Email → Connect inbox**: enter an address such as `support@northwind.example.com`, click **Use the local test mail server (development)**, then **Test connection** and **Connect inbox**.
+2. Email that address as a customer:
+
+   ```bash
+   python3 - <<'PY'
+   import smtplib
+   from email.message import EmailMessage
+   m = EmailMessage()
+   m["From"], m["To"], m["Subject"] = "Tom <tom@example.com>", "support@northwind.example.com", "Jacket still not here"
+   m.set_content("Hi, my order NW-10204 is 5 days late. Any news?")
+   with smtplib.SMTP("localhost", 3025) as s: s.send_message(m)
+   PY
+   ```
+3. Click **Check now** (or wait for the next check). The email becomes a case with its subject.
+4. Reply on the case. The message shows **✓ Emailed to tom@example.com**, and the email is in Tom's mailbox on GreenMail (IMAP, username `tom@example.com`, any password).
+5. Answer that email from Tom's side (keep the `In-Reply-To` header). It lands on the same case.
+
+The demo seed script does steps 1–3 for you when GreenMail is running.
+
 ### Try AI reply drafting
 
 First add your Anthropic API key: see [Turn on AI drafting](#turn-on-ai-drafting-anthropic-api-key) above. Then:
