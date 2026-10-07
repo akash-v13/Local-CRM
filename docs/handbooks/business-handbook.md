@@ -539,7 +539,7 @@ In **Pipeline → Executions**, this is step **⓪ Read the message**, with the 
 
 ![Step 0 in a case's run](images/pipeline-execution-reading.png)
 
-**Which model reads?** *Jev* (TypeSafe AI's decision model) when your administrator has set a TypeSafe key: about $0.00003 a message. Otherwise *Claude*, about $0.001 a message. With neither key, a field is filled only when exactly one match is found, and no category is chosen. Personal details (names, email addresses, phone numbers) are hidden from the model.
+**Which model reads?** *Jev* (TypeSafe AI's decision model) when your administrator has set a TypeSafe key: about $0.00004 a message, in a fraction of a second. Otherwise *Claude*, about $0.001 a message. With neither key, a field is filled only when exactly one match is found, and no category is chosen. Personal details (names, email addresses, phone numbers) are hidden from the model.
 
 # Part C: Recipes and reference
 

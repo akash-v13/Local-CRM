@@ -82,7 +82,7 @@ export function ReadingPage() {
 
       <p className={`card form-card reader-status ${reader === "patterns" ? "warn" : ""}`}>
         <span>Reading with <strong>{READER_LABELS[reader] ?? reader}</strong>.</span>{" "}
-        {reader === "jev" && "TypeSafe's decision model: about $0.00003 per message, 70–500 ms."}
+        {reader === "jev" && "TypeSafe's decision model: about $0.00004 per message, usually under half a second."}
         {reader === "claude" && "Claude Haiku, because no TYPESAFE_API_KEY is set. About $0.001 per message."}
         {reader === "patterns" && "No AI key is set: a field is filled only when its pattern finds exactly one candidate, and categories aren't chosen. Add TYPESAFE_API_KEY (or ANTHROPIC_API_KEY) to .env."}
       </p>
