@@ -37,10 +37,11 @@ Early, but working end to end on a laptop.
 | Enrichment: connectors to any HTTP API, shared credentials (API key, bearer, basic, OAuth 2.0, generated tokens), background worker | ✅ Built |
 | Intake pipeline view: diagram of every step a case goes through, plus each case's run (Step Functions–style) | ✅ Built |
 | AI reply drafting: layered Jinja prompt templates, PII masking, test lab across Claude models, cost projections | ✅ Built (needs an Anthropic API key) |
+| Automatic replies: new cases answered after a delay (6 h default) with a standard reply or an AI-written one, held for a person when anything needs a look | ✅ Built |
 | Compensation matrix: rules, guardrails (approval threshold, repeat claims), approvals, backtest | ✅ Built |
 | Shopify: connect a store; every case gets its order (total, delivery, tracking, days late); refunds, store credit and discount codes issued on the store; contact-form emails | ✅ Built (own-store app; one-click App Store install planned) |
 | Payouts: approved compensation issued through the business's own Shopify store or Stripe account, never twice | ✅ Built |
-| One-click Shopify install (public app + cloud relay), cash payouts to customers (PayPal / Wise / Tremendous), Google / Microsoft 365 inbox sign-in (OAuth), storing attachments, SLA timers, AI auto-send, sign-in | 🗓️ Planned |
+| One-click Shopify install (public app + cloud relay), cash payouts to customers (PayPal / Wise / Tremendous), Google / Microsoft 365 inbox sign-in (OAuth), storing attachments, SLA timers, sign-in | 🗓️ Planned |
 
 ---
 
@@ -103,8 +104,12 @@ Each draft is built from **Jinja templates in layers**. If two layers conflict, 
 | 3 | Persona: voice, empathy level, greeting, sign-off | `queue/<Queue>.jinja`, or the default persona | Each business |
 | 4 | Case type: what to answer and how | `category/<Type>_<Category>_<Sub>.jinja`, falling back to broader templates | Each business |
 
-Personal data is masked before the prompt is built and restored afterwards. Each draft is checked for word limits, required and banned phrases, and invented contact details, and an agent always reviews it before it's sent. Managers can preview the exact prompt for any case for free, compare Haiku / Sonnet / Opus in the **test lab** (quality, consistency, speed, cost), and see **monthly cost projections**.
+Personal data is masked before the prompt is built and restored afterwards. Each draft is checked for word limits, required and banned phrases, and invented contact details, and an agent reviews it before it's sent, unless the queue answers automatically (below). Managers can preview the exact prompt for any case for free, compare Haiku / Sonnet / Opus in the **test lab** (quality, consistency, speed, cost), and see **monthly cost projections**.
 → [Template author guide](backend/app/ai/templates/README.md) · [Codebase guide §11](docs/dev/codebase-guide.md#11-ai-reply-drafting) · [Try it](docs/dev/local-setup.md)
+
+### Automatic replies
+A queue can answer new cases on its own. The reply is either the queue's **standard reply** with the customer's name, order and compensation filled in (no AI cost), or **written by AI** from the business's prompt templates. It's drafted when the case arrives and sent after a delay, **6 hours** by default, so it reads like a person's reply and leaves time to step in: the case shows when it goes out, with **Send now** and **Cancel**. Anything a person should see is held instead: compensation waiting for approval or a failed payout, a complaint no rule matched, an order number the reader wasn't sure of, an AI draft with warnings, or a customer who wrote again. While a refund or code is being issued, the reply waits so it can quote it.
+→ [Business handbook B11](docs/handbooks/business-handbook.md#b11-automatic-replies) · [Codebase guide §11](docs/dev/codebase-guide.md#automatic-replies)
 
 ### AI costs
 

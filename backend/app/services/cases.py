@@ -33,6 +33,7 @@ from app.schemas import (
     RouteRequest,
     TransitionRequest,
 )
+from app.services.auto_reply import queue_auto_reply
 from app.services.compensation import CompensationService
 from app.services.email import InboundEmail, outbound_email
 from app.services.reading import queue_reading, settings_of, should_read
@@ -352,7 +353,8 @@ class CaseService:
                 },
             )
         )
-        if CaseStatus(case.status) is CaseStatus.INTAKE:
+        first_routing = CaseStatus(case.status) is CaseStatus.INTAKE
+        if first_routing:
             self.apply_transition(
                 case, CaseStatus.QUEUED, actor_type, actor_id, f"Routed to {winner.name}"
             )
@@ -360,6 +362,8 @@ class CaseService:
         CompensationService(self.session).decide_for_case(
             case, customer_texts, actor_type, actor_id, only_if_undecided=True
         )
+        if first_routing:  # a new case in a queue that answers automatically
+            queue_auto_reply(self.session, case)
 
     # ----- status and correspondence ------------------------------------------------------
 
@@ -384,6 +388,7 @@ class CaseService:
         req: MessageCreate,
         *,
         inbound: InboundEmail | None = None,
+        author_type: ActorType = "human",
     ) -> Message:
         """Add correspondence to a case.
 
@@ -406,9 +411,9 @@ class CaseService:
                 f"Case {case_number} is closed. Replies are not accepted; open a new case instead."
             )
 
-        if req.kind == "agent_reply":
+        if req.kind == "agent_reply":  # author_type "ai": an automatic reply
             message = Message(
-                direction="outbound", author_type="human", visibility="public", channel="email"
+                direction="outbound", author_type=author_type, visibility="public", channel="email"
             )
             event_type, event_data = "message.sent", {"delivery": "simulated"}
             if req.from_draft_id is not None:
@@ -452,7 +457,7 @@ class CaseService:
                 )
             )
 
-        actor: ActorType = "customer" if req.kind == "customer_reply" else "human"
+        actor: ActorType = "customer" if req.kind == "customer_reply" else author_type
         self.events.add(
             CaseEvent(
                 tenant_id=tenant_id,
@@ -470,7 +475,7 @@ class CaseService:
         ):
             self.apply_transition(case, CaseStatus.QUEUED, "customer", None, "Customer replied")
         elif req.kind == "agent_reply" and req.then_status is not None:
-            self.apply_transition(case, req.then_status, "human", req.author_id, None)
+            self.apply_transition(case, req.then_status, author_type, req.author_id, None)
 
         case.updated_at = utcnow()  # marks the case changed, so its version is bumped
         self.commit_case(case)
@@ -484,7 +489,7 @@ class CaseService:
         template and model are doing their job.
         """
         draft = self.session.get(Message, draft_id)
-        if draft is None or draft.case_id != case.id or draft.author_type != "ai":
+        if draft is None or draft.case_id != case.id or draft.author_type not in ("ai", "system"):
             raise NotFoundError(f"Draft {draft_id} not found on this case.")
 
         def normalize(text: str) -> str:

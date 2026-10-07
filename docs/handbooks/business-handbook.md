@@ -42,6 +42,7 @@ Every screenshot uses a made-up demo shop called *Northwind Outfitters*. Ask who
 - [B8. Reading messages](#b8-reading-messages)
 - [B9. Payouts: issuing compensation through Shopify or Stripe](#b9-payouts-issuing-compensation-through-shopify-or-stripe)
 - [B10. Connecting your Shopify store](#b10-connecting-your-shopify-store)
+- [B11. Automatic replies](#b11-automatic-replies)
 
 **Part C: Recipes and reference**
 
@@ -237,7 +238,7 @@ When a case is routed, your business's **compensation rules** decide what the cu
 
 **Your options:**
 - **Approve:** the compensation is confirmed, and AI drafts will mention it.
-- **Reject:** type a reason first, then click Reject. Nothing is offered.
+- **Reject:** type a reason first, then click Reject. Nothing is offered. (A queue that answers automatically holds its reply until this is decided: B11.)
 - **Decide again:** re-runs the rules, e.g. after order data arrived or the rules changed. Not possible once a decision has been approved or rejected.
 
 **Paying it.** If your business issues compensation through Stripe ([B9](#b9-payouts-issuing-compensation-through-shopify-or-stripe)), the bottom of the card shows how that went:
@@ -624,6 +625,36 @@ In **Pipeline**, the lookup is step **① Shopify order**, before your other con
 
 ![Step 1 in a case's run](images/shopify-pipeline-execution.png)
 
+## B11. Automatic replies
+
+A queue can answer new cases for you. Open the queue (**Operations → Queues & routing**) and turn on **Reply to new cases automatically**.
+
+![Automatic reply settings with a preview](images/auto-reply-settings.png)
+
+**Two ways to write the reply:**
+- **Standard reply:** your own text, with the case's details filled in: `{{customer.first_name}}`, `{{case.order}}` ("order #1023"), `{{compensation.sentence}}` ("Here's what we've done: Voucher code … worth USD 15.00"), `{{business.name}}` and more (click a placeholder to insert it). No AI cost. **Preview** it with a real case before saving.
+- **Written by AI:** the same as **Draft with AI** (A4), following your prompt templates (B5). Needs **Allow AI to draft replies** on the queue.
+
+**The wait.** The reply is written as soon as the case arrives and sent after the wait you choose (6 hours by default; 0 sends at once). Customers get a reply at a natural pace, and you have time to step in. Meanwhile the case shows **With AI**, and its **Automatic reply** card says when it goes out:
+
+| Scheduled | Held for you |
+|---|---|
+| ![A scheduled automatic reply](images/auto-reply-scheduled.png) | ![A held automatic reply](images/auto-reply-held.png) |
+
+- **Send now** sends it straight away.
+- **Cancel and reply myself** stops it; the case is yours to answer.
+- Taking the case another way (e.g. **Assign to me**) also stops it.
+
+**What it never sends on its own.** The reply is held, and the case goes back to the queue for a person, when:
+- compensation is waiting for approval, or its payout failed;
+- the complaint matched none of your compensation rules;
+- the order number needs confirming (B8);
+- the AI draft has warnings;
+- the standard reply uses data the case doesn't have (e.g. a tracking number);
+- the customer writes again before it's sent.
+
+If a refund, credit or code is still being issued, the reply waits a little so it can say exactly what was given (including the voucher code). After sending, the case is **Solved**; if the customer replies, it reopens as usual.
+
 # Part C: Recipes and reference
 
 ## C1. Recipes
@@ -700,7 +731,6 @@ Create a rule *Weather delays: no compensation* with the condition *Shipping tra
 - **Cash payouts.** Refunds, store credit and codes go through Shopify or Stripe ([B9](#b9-payouts-issuing-compensation-through-shopify-or-stripe)); sending cash to a customer's bank (PayPal, Wise and similar) isn't built yet.
 - **One-click Shopify install.** Today you create a small app in Shopify's Dev Dashboard (B10). An *Install* button from the Shopify App Store comes later.
 - **SLA timers, automatic escalation and auto-close.** SLA hours and the reopen window are saved on queues but not enforced yet, so Solved cases aren't closed automatically.
-- **AI sending replies on its own.** The setting exists, but every draft still needs a person.
 
 ---
 

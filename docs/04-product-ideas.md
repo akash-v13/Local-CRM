@@ -41,6 +41,7 @@ Keep the enrichment flow model, but let each customer configure it through a UI:
 
 **Feedback**
 - **Decision-table UI:** condition columns are case fields, output columns are compensation type and amount. Borrow DMN concepts such as hit policy (first match, priority, highest value).
+- *(Oct 2026: automatic replies are built per queue, with a delay, a standard or AI-written reply, and holds for anything a person should see.)*
 - **Make the send option part of each rule, not a global setting.** For example: under $25 auto-send, $25–$200 manager approval, above $200 always human.
 - **Guardrails:**
   - caps per customer per time period

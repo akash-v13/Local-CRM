@@ -36,6 +36,7 @@ from app.db import SessionLocal
 from app.email.transport import MailTransport
 from app.models import Job
 from app.security.ssrf import resolve_host
+from app.services.auto_reply import auto_reply_job
 from app.services.connectors import run_settings
 from app.services.email import poll_mailbox, schedule_polls, send_email_job, transport_from
 from app.services.enrichment import EnrichmentService, claim_job
@@ -59,6 +60,7 @@ def build_handlers(
         "enrich_case": service.enrich_case,
         "template_test": lambda job_id: execute_test_run(factory, writer, job_id),
         "read_case": lambda job_id: read_case_job(factory, reader, job_id),
+        "auto_reply": lambda job_id: auto_reply_job(factory, writer, job_id),
         "issue_payout": lambda job_id: issue_payout_job(
             factory,
             service.client,

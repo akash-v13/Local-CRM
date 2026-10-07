@@ -229,6 +229,14 @@ docker-compose points Shopify at a **fake Shopify** in the mocks service (`SHOPI
 
 The demo seed script creates all of this as *Harbor Goods (Shopify demo)*. To try a **real store**: remove the `SHOPIFY_API_BASE` line from `docker-compose.yml`, `docker compose up -d`, create a free development store in a Shopify Partner account, create an app in the Dev Dashboard with the scopes listed on the Shopify page, install it on the store, and connect with its client ID and secret (in the UI only: never in `.env`, code or chat).
 
+### Try automatic replies
+
+1. Open a queue (**Operations → Queues & routing**), tick **Reply to new cases automatically**, keep **Standard reply**, set the wait to `0.1` hours (6 minutes) and **Preview** with a case. Save.
+2. Submit a webform case that lands in that queue. Its **Automatic reply** card says when it goes out; **Send now** sends it at once, **Cancel and reply myself** stops it.
+3. Add a compensation rule that needs approval: the next case's reply is **held**, and the card says why.
+
+The demo seed script turns this on (6 hours) for the *Harbor Goods* store.
+
 ### Try AI reply drafting
 
 First add your Anthropic API key: see [Turn on AI drafting](#turn-on-ai-drafting-anthropic-api-key) above. Then:
