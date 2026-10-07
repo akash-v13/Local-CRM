@@ -24,6 +24,10 @@ from typing import Any, Literal
 PATTERN_PRESETS: dict[str, tuple[str, str]] = {
     "code": (r"\b[A-Z]{1,5}-?\d{3,12}\b", "Letters then digits, e.g. NW-10211 or ORD10211"),
     "digits": (r"\b\d{5,14}\b", "A long number, e.g. 104821377"),
+    "order": (
+        r"(?:#\d{3,12}\b|\b[A-Z]{1,5}-?\d{3,12}\b|\b\d{5,14}\b)",
+        "Any order number: #1001, NW-10211 or 104821377",
+    ),
     "amount": (
         r"(?:[$€£]\s?\d[\d,]*(?:\.\d{1,2})?|\b\d[\d,]*(?:\.\d{1,2})?\s?(?:USD|EUR|GBP|dollars|euros|pounds)\b)",
         "A money amount, e.g. $179.04 or 40 EUR",

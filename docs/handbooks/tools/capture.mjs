@@ -227,6 +227,21 @@ if (harbor) {
   console.log("– no Shopify demo store: skipped the Shopify screenshots");
 }
 
+// ----- setup and integrations (any platform) ----------------------------------------------------
+const seaside = (await get("/tenants")).filter((t) => t.name.startsWith("Seaside Crafts (SHOP.COM seller demo")).at(-1);
+if (seaside) {
+  await page.evaluate((id) => localStorage.setItem("resolve.tenantId", id), seaside.id);
+  await page.addInitScript((id) => localStorage.setItem("resolve.tenantId", id), seaside.id);
+  await open("/ops", "Finish setting up");
+  await shot("setup-banner", page.locator(".setup-banner"));
+  await open("/ops/setup", "Your next steps");
+  await shot("setup", page, { fullPage: true });
+  await open("/ops/integrations", "Where you sell");
+  await shot("integrations", page, { fullPage: true });
+} else {
+  console.log("– no SHOP.COM seller demo: skipped the setup screenshots");
+}
+
 // ----- developers ----------------------------------------------------------------------------
 await page.goto(`${API}/docs`);
 await page.getByText("compensation", { exact: false }).first().waitFor();

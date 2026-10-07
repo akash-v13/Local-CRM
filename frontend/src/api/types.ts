@@ -1015,3 +1015,48 @@ export interface AutoReplyState {
   reason?: string | null;
   released_by?: string;
 }
+
+// ----- setup and integrations ------------------------------------------------------------------
+
+export type SalesChannel = "shopify" | "marketplace" | "own_site" | "in_store";
+
+/** Where the business sells: decides the suggested setup steps and integrations (never locks anything). */
+export interface BusinessProfile {
+  sells_on: SalesChannel[];
+  /** e.g. ["SHOP.COM", "Etsy"] */
+  marketplaces: string[];
+  /** The owner finished (or hid) the setup list. */
+  completed: boolean;
+}
+
+export interface SetupStep {
+  key: string;
+  title: string;
+  detail: string;
+  done: boolean;
+  /** Where in the app to do it, e.g. /ops/email/new. */
+  link: string;
+  optional: boolean;
+}
+
+export interface SetupInfo {
+  profile: BusinessProfile;
+  steps: SetupStep[];
+  /** Suggestions for the marketplace list. */
+  marketplaces: string[];
+  /** Defaults the last save switched on, in words. */
+  applied: string[];
+}
+
+export type IntegrationStatus = "connected" | "needs_attention" | "not_connected" | "coming_soon";
+
+export interface IntegrationCard {
+  key: string;
+  name: string;
+  group: "store" | "messages" | "payments" | "systems";
+  status: IntegrationStatus;
+  summary: string;
+  link: string | null;
+  /** Suggested by the business profile. */
+  recommended: boolean;
+}

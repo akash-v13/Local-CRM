@@ -19,7 +19,9 @@ import { MailboxListPage } from "./pages/ops/MailboxListPage";
 import { PipelineExecutionPage } from "./pages/ops/PipelineExecutionPage";
 import { PipelineExecutionsPage, PipelinePage } from "./pages/ops/PipelinePage";
 import { PayoutsPage } from "./pages/ops/PayoutsPage";
+import { IntegrationsPage } from "./pages/ops/IntegrationsPage";
 import { ReadingPage } from "./pages/ops/ReadingPage";
+import { SetupPage } from "./pages/ops/SetupPage";
 import { ShopifyPage } from "./pages/ops/ShopifyPage";
 import { PromptTemplateEditorPage } from "./pages/ops/PromptTemplateEditorPage";
 import { PromptTemplateListPage } from "./pages/ops/PromptTemplateListPage";
@@ -43,6 +45,8 @@ import { WebformPage } from "./pages/WebformPage";
  *   /ops/pipeline[/executions[/:caseNumber]]  Operations Portal: intake pipeline diagram + per-case runs
  *   /ops/compensation[/new|/:id]  Operations Portal: compensation rules, guardrails, backtest
  *   /ops/payouts                  Operations Portal: issuing approved compensation (Stripe, Shopify)
+ *   /ops/setup                    Operations Portal: where the business sells + setup checklist
+ *   /ops/integrations             Operations Portal: everything it can connect, with status
  *   /ops/shopify                  Operations Portal: the business's Shopify store (order lookup)
  *   /ops/templates[/<name>]       Operations Portal: Jinja prompt templates (+ preview, test lab, costs)
  *   /ops/samples[/new|/:id]       Operations Portal: sample cases for the test lab
@@ -68,6 +72,8 @@ export function App() {
               <Route path="reading" element={<ReadingPage />} />
               <Route path="payouts" element={<PayoutsPage />} />
               <Route path="shopify" element={<ShopifyPage />} />
+              <Route path="setup" element={<SetupPage />} />
+              <Route path="integrations" element={<IntegrationsPage />} />
               <Route path="pipeline" element={<PipelinePage />} />
               <Route path="pipeline/executions" element={<PipelineExecutionsPage />} />
               <Route path="pipeline/executions/:caseNumber" element={<PipelineExecutionPage />} />

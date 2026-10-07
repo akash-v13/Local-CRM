@@ -1633,3 +1633,65 @@ class AutoReplyPreviewRequest(BaseModel):
 
 class AutoReplyPreview(BaseModel):
     reply: str
+
+
+# ----- setup and integrations ------------------------------------------------------------------
+
+SalesChannel = Literal["shopify", "marketplace", "own_site", "in_store"]
+MARKETPLACES = ["SHOP.COM", "Amazon", "Etsy", "eBay", "Walmart"]
+
+
+class BusinessProfile(BaseModel):
+    """Where the business sells. Nothing here limits what it can connect: it only decides
+    which setup steps and integrations are suggested."""
+
+    sells_on: list[SalesChannel] = Field(default_factory=list)
+    marketplaces: list[str] = Field(
+        default_factory=list, max_length=10, description='e.g. ["SHOP.COM", "Etsy"]'
+    )
+    completed: bool = Field(default=False, description="The owner finished (or hid) the list.")
+
+    @model_validator(mode="after")
+    def _check(self) -> "BusinessProfile":
+        self.sells_on = list(dict.fromkeys(self.sells_on))
+        self.marketplaces = list(
+            dict.fromkeys(m.strip()[:40] for m in self.marketplaces if m.strip())
+        )
+        if self.marketplaces and "marketplace" not in self.sells_on:
+            self.sells_on.append("marketplace")
+        return self
+
+
+class SetupStep(BaseModel):
+    key: str
+    title: str
+    detail: str
+    done: bool
+    link: str = Field(description="Where in the app to do it, e.g. /ops/email/new.")
+    optional: bool = False
+
+
+class SetupInfo(BaseModel):
+    profile: BusinessProfile
+    steps: list[SetupStep]
+    marketplaces: list[str] = Field(description="Suggestions for the marketplace list.")
+    applied: list[str] = Field(
+        default_factory=list, description="Defaults switched on by the last save, in words."
+    )
+
+
+IntegrationStatus = Literal["connected", "needs_attention", "not_connected", "coming_soon"]
+
+
+class IntegrationCard(BaseModel):
+    key: str
+    name: str
+    group: Literal["store", "messages", "payments", "systems"]
+    status: IntegrationStatus
+    summary: str
+    link: str | None = None
+    recommended: bool = Field(default=False, description="Suggested by the business profile.")
+
+
+class IntegrationsInfo(BaseModel):
+    cards: list[IntegrationCard]

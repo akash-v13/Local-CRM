@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { api } from "../../api/client";
 import { QueueHeatTable } from "../../components/QueueHeatTable";
 import { StatTile } from "../../components/StatTile";
+import { SetupBanner } from "./SetupPage";
 import { useSession } from "../../context/SessionContext";
 import { formatDateTime } from "../../lib/format";
 import { useLoad } from "../../lib/useLoad";
@@ -14,6 +15,7 @@ import { useLoad } from "../../lib/useLoad";
 export function OpsDashboardPage() {
   const { tenantId } = useSession();
   const report = useLoad(tenantId ? () => api.queueReport(tenantId) : null, [tenantId]);
+  const setup = useLoad(tenantId ? () => api.getSetup(tenantId) : null, [tenantId]);
 
   if (report.error) return <p className="error">{report.error}</p>;
   if (!report.data) return <p className="muted">Loading…</p>;
@@ -34,6 +36,8 @@ export function OpsDashboardPage() {
           Refresh
         </button>
       </div>
+
+      {setup.data && <SetupBanner info={setup.data} />}
 
       <div className="stat-row">
         <StatTile hero label="Open cases" value={openTotal} hint="Not yet solved or closed" to="/cases" />

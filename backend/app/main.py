@@ -21,6 +21,7 @@ from app.api import (
     reading,
     replies,
     reports,
+    setup,
     shopify,
     tenants,
 )
@@ -63,6 +64,7 @@ app.include_router(auto_reply.router)
 app.include_router(payouts.router)
 app.include_router(payouts.case_router)
 app.include_router(shopify.router)
+app.include_router(setup.router)
 
 
 # Map domain errors (raised by services) to HTTP responses in one place.
