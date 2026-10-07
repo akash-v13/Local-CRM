@@ -6,6 +6,8 @@ A customer care **resolution engine**. It takes in customer cases, enriches them
 
 This README is the **one place to start**. It explains what the product does and how it's built, and links to the detailed guide for each part. Each folder's own README goes deeper, but you shouldn't need to hunt through them.
 
+P.S This is a part of the work being done by Akash Venkatesan, Pranav Iyer, and Aryan Ochani as a part of the SNVC program at UChicago's Booth School of Business.
+
 ---
 
 ## Contents
