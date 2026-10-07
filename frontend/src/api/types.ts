@@ -83,7 +83,7 @@ export interface Case {
   sla: Record<string, unknown>;
   /** Per connector key: what happened the last time it ran for this case. */
   enrichment: Record<string, EnrichmentResult>;
-  decisions: { compensation?: CompensationDecision } & Record<string, unknown>;
+  decisions: { compensation?: CompensationDecision; auto_reply?: AutoReplyState } & Record<string, unknown>;
   /** What was read from the customer's message (empty when reading didn't run). */
   extraction: ReadingRecord | Record<string, never>;
   queue_id: string | null;
@@ -198,7 +198,14 @@ export interface MatchCriteria {
 
 export interface QueueSettings {
   gen_ai_allowed: boolean;
+  /** Reply to new cases automatically, after a delay. */
   auto_send: boolean;
+  /** template: the standard reply with the case's details filled in. ai: written from the prompt templates. */
+  auto_send_mode: "template" | "ai";
+  /** Wait this long before sending (a person can still step in). */
+  auto_send_delay_minutes: number;
+  /** The standard reply, with {{placeholders}}. */
+  auto_send_template: string;
   approval_threshold: number | null;
   sla_first_response_hours: number | null;
   reopen_window_hours: number | null;
@@ -991,6 +998,22 @@ export interface ShopifyLookupResult {
   searched: string[];
   duration_ms: number | null;
   admin_url: string | null;
+}
+
+// ----- automatic replies -----------------------------------------------------------------------
+
+/** decisions.auto_reply: an automatic reply's progress on a case. */
+export interface AutoReplyState {
+  status: "preparing" | "scheduled" | "held" | "sent" | "cancelled";
+  mode?: "template" | "ai";
+  draft_id?: string;
+  scheduled_at?: string | null;
+  /** When it goes out. */
+  send_at?: string;
+  sent_at?: string;
+  /** Why it was held or cancelled. */
+  reason?: string | null;
+  released_by?: string;
 }
 
 // ----- setup and integrations ------------------------------------------------------------------

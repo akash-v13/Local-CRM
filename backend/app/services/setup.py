@@ -30,6 +30,7 @@ from app.repositories import (
     CompensationRuleRepository,
     ConnectorRepository,
     CredentialRepository,
+    QueueRepository,
     TenantRepository,
 )
 from app.schemas import (
@@ -38,6 +39,7 @@ from app.schemas import (
     IntegrationCard,
     IntegrationsInfo,
     PayoutSettingsData,
+    QueueSettings,
     ReadingField,
     ReadingSettingsData,
     SetupInfo,
@@ -73,6 +75,7 @@ class _State:
     connectors: list[str]
     credentials: int
     rules: int
+    auto_reply_queues: list[str]  # queues that answer new cases automatically
 
     @property
     def active_inboxes(self) -> list[Mailbox]:
@@ -118,6 +121,11 @@ class SetupService:
             ],
             credentials=len(CredentialRepository(self.session).list(tenant.id)),
             rules=len(CompensationRuleRepository(self.session).list(tenant.id, active_only=True)),
+            auto_reply_queues=[
+                q.name
+                for q in QueueRepository(self.session).list(tenant.id, active_only=True)
+                if QueueSettings.model_validate(q.settings or {}).auto_send
+            ],
         )
 
     # ----- setup checklist -----------------------------------------------------------------
@@ -253,6 +261,17 @@ def steps_for(state: _State) -> list[SetupStep]:
                 optional=True,
             )
         )
+    steps.append(
+        SetupStep(
+            key="auto_reply",
+            title="Answer simple cases automatically",
+            detail="Turn on automatic replies for a queue: a standard reply or an AI-written one, "
+            "sent after a wait (6 hours by default). Anything that needs you is held.",
+            done=bool(state.auto_reply_queues),
+            link="/ops/queues",
+            optional=True,
+        )
+    )
     return steps
 
 
@@ -330,6 +349,20 @@ def cards_for(state: _State, settings: Settings) -> list[IntegrationCard]:
             ),
             link="/ops/reading",
             recommended=bool(sells),
+        ),
+        IntegrationCard(
+            key="auto_reply",
+            name="Automatic replies",
+            group="messages",
+            status="connected" if state.auto_reply_queues else "not_connected",
+            summary=(
+                "On for " + ", ".join(state.auto_reply_queues)
+                if state.auto_reply_queues
+                else "Answer new cases on their own, after a wait you choose; held when a person "
+                "should look."
+            ),
+            link="/ops/queues",
+            recommended="marketplace" in sells or "shopify" in sells,
         ),
         IntegrationCard(
             key="webform",

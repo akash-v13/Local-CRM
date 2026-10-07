@@ -42,7 +42,7 @@ def test_new_business_has_no_profile(client: TestClient, tenant_id: str) -> None
     info = client.get(f"/tenants/{tenant_id}/setup").json()
     assert info["profile"] == {"sells_on": [], "marketplaces": [], "completed": False}
     assert "SHOP.COM" in info["marketplaces"]
-    assert [s["key"] for s in info["steps"]] == ["inbox", "reading", "rules"]
+    assert [s["key"] for s in info["steps"]] == ["inbox", "reading", "rules", "auto_reply"]
 
 
 def test_marketplace_seller_works_by_email(client: TestClient, tenant_id: str) -> None:
@@ -51,7 +51,7 @@ def test_marketplace_seller_works_by_email(client: TestClient, tenant_id: str) -
     assert info["profile"]["marketplaces"] == ["SHOP.COM"]
     assert info["applied"] == ["Reading order numbers out of customers' emails is now on."]
     s = steps(info)
-    assert list(s) == ["inbox", "reading", "rules"]  # no Shopify, no Stripe
+    assert list(s) == ["inbox", "reading", "rules", "auto_reply"]  # no Shopify, no Stripe
     assert "SHOP.COM seller account" in s["inbox"]["detail"]
     assert "issue those refunds in your seller dashboard" in s["rules"]["detail"]
     assert s["reading"]["done"] and not s["inbox"]["done"]
@@ -65,6 +65,19 @@ def test_marketplace_seller_works_by_email(client: TestClient, tenant_id: str) -
     link_inbox(client, tenant_id)
     assert steps(client.get(f"/tenants/{tenant_id}/setup").json())["inbox"]["done"]
     assert cards(client, tenant_id)["marketplaces"]["status"] == "connected"
+
+    # Automatic replies: an optional step and a card, ticked once a queue answers on its own.
+    assert steps(client.get(f"/tenants/{tenant_id}/setup").json())["auto_reply"]["optional"]
+    assert cards(client, tenant_id)["auto_reply"]["recommended"]
+    general = next(
+        q for q in client.get(f"/tenants/{tenant_id}/queues").json() if q["name"] == "General"
+    )
+    client.patch(
+        f"/tenants/{tenant_id}/queues/{general['id']}",
+        json={"settings": {**general["settings"], "auto_send": True}},
+    )
+    assert steps(client.get(f"/tenants/{tenant_id}/setup").json())["auto_reply"]["done"]
+    assert cards(client, tenant_id)["auto_reply"]["summary"] == "On for General"
 
 
 def test_defaults_never_overwrite_existing_settings(client: TestClient, tenant_id: str) -> None:

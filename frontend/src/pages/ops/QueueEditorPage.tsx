@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router";
 
 import { api, errorMessage } from "../../api/client";
 import type { EffortLevel, MatchCriteria, ModelId, QueueInput, QueueSettings } from "../../api/types";
+import { AutoReplySettings, DEFAULT_AUTO_REPLY } from "../../components/AutoReplySettings";
 import { ConditionBuilder } from "../../components/ConditionBuilder";
 import { Field } from "../../components/Field";
 import { RoutingPreviewPanel } from "../../components/RoutingPreviewPanel";
@@ -14,6 +15,9 @@ import { useLoad } from "../../lib/useLoad";
 const DEFAULT_SETTINGS: QueueSettings = {
   gen_ai_allowed: false,
   auto_send: false,
+  auto_send_mode: "template",
+  auto_send_delay_minutes: 360,
+  auto_send_template: DEFAULT_AUTO_REPLY,
   approval_threshold: null,
   sla_first_response_hours: null,
   reopen_window_hours: 72,
@@ -206,7 +210,7 @@ export function QueueEditorPage() {
           <div className="card form-card">
             <h2>Handling</h2>
             <p className="hint">
-              AI drafting applies now; approvals and SLA timers are saved and applied as those features arrive.
+              AI drafting and the approval limit apply now; SLA timers are saved and applied when that feature arrives.
             </p>
             <label className="checkbox">
               <input
@@ -216,20 +220,12 @@ export function QueueEditorPage() {
                   setSettings({
                     ...settings,
                     gen_ai_allowed: e.target.checked,
-                    auto_send: e.target.checked && settings.auto_send,
+                    // AI-written automatic replies need AI drafting: fall back to the standard reply.
+                    auto_send_mode: e.target.checked ? settings.auto_send_mode : "template",
                   })
                 }
               />
               Allow AI to draft replies
-            </label>
-            <label className="checkbox indent">
-              <input
-                type="checkbox"
-                checked={settings.auto_send}
-                disabled={!settings.gen_ai_allowed}
-                onChange={(e) => setSettings({ ...settings, auto_send: e.target.checked })}
-              />
-              AI may send without human review
             </label>
             {settings.gen_ai_allowed && (
               <div className="grid-2 indent">
@@ -286,6 +282,8 @@ export function QueueEditorPage() {
               </Field>
             </div>
           </div>
+
+          <AutoReplySettings tenantId={tenantId} settings={settings} onChange={(patch) => setSettings({ ...settings, ...patch })} />
 
           {error && <p className="error pre-line" role="alert">{error}</p>}
           <div className="actions">

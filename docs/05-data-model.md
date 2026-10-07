@@ -26,7 +26,7 @@ Draft data model for the resolution platform. It builds on the case document in 
 | `caseSchemas` | Tenant's custom case fields (JSON Schema) | Versioned; each case records `schemaVersion` |
 | `connectors` | API definitions: auth type, request template, field mappings, timeouts and retries | **Secrets live in a vault**; stored here only as a reference |
 | `flows` | Enrichment flow definitions (steps, conditions, map-over-items) | Versioned; run by the flow engine |
-| `queues` | Policy bundle: match criteria, priority, GenAI on/off, auto-send, approval thresholds, SLA policy ref, reopen window | Routing rules can live inside the queue |
+| `queues` | Policy bundle: match criteria, priority, GenAI on/off, automatic replies (mode, delay, standard reply), approval thresholds, SLA policy ref, reopen window | Routing rules can live inside the queue |
 | `slaPolicies` | Base targets (first response, resolution), clock type, modifiers (tier, sensitivity) | Strictest applicable target wins |
 | `compensationMatrices` | Decision tables: conditions → outcome + disposition (auto / approval / delay) | Versioned; draft → published → archived |
 | `regulationPacks` | EU261-style rule sets and applicability rules | Versioned; can be shared across tenants |

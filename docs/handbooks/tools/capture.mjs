@@ -211,6 +211,15 @@ if (harbor) {
   await shot("shopify-case-refund", card("Compensation"));
   await open(`/cases/${byEmail("jin.park@example.com")}`, "Conversation");
   await shot("shopify-case-discount", card("Compensation"));
+  await shot("auto-reply-scheduled", card("Automatic reply"));
+  await open(`/cases/${byEmail("elena.novak@example.com")}`, "Conversation");
+  await shot("auto-reply-held", card("Automatic reply"));
+  const harborQueues = await get(`/tenants/${harbor.id}/queues`);
+  await open(`/ops/queues/${harborQueues.find((q) => q.name === "General").id}`, "Automatic replies");
+  await page.getByLabel("Preview with a case").selectOption(String(byEmail("jin.park@example.com")));
+  await page.getByRole("button", { name: "Preview" }).click();
+  await page.locator(".reply-preview").waitFor();
+  await shot("auto-reply-settings", card("Automatic replies"));
   await open(`/ops/pipeline/executions/${priyaLate}`, "Ready for an agent");
   await page.getByText("Shopify order", { exact: true }).first().click();
   await shot("shopify-pipeline-execution", page, { fullPage: true });

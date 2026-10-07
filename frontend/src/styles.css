@@ -1923,6 +1923,65 @@ a.tab {
   border-left-width: 5px;
 }
 
+/* ----- automatic replies ----- */
+
+.auto-reply-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.4rem;
+}
+.auto-reply-card p {
+  margin: 0 0 0.4rem;
+}
+.auto-reply-card.status-held .auto-reply-title strong {
+  color: var(--danger);
+}
+.auto-reply-text {
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+  white-space: pre-wrap;
+  font-size: 0.85rem;
+  max-height: 14rem;
+  overflow: auto;
+}
+.placeholder-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  margin: 0.4rem 0;
+}
+.preview-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.reply-preview {
+  white-space: pre-wrap;
+  font-family: var(--font);
+  font-size: 0.9rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+}
+.radio-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.8rem;
+  margin: 0.5rem 0 0.75rem;
+}
+.radio-stack p {
+  margin: 0;
+}
+
 /* ----- setup and integrations ----- */
 
 .channel-grid {

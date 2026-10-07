@@ -35,7 +35,8 @@ ALLOWED_TRANSITIONS: dict[CaseStatus, frozenset[CaseStatus]] = {
     S.INTAKE: frozenset({S.QUEUED, S.ENRICHMENT_FAILED}),
     S.ENRICHMENT_FAILED: frozenset({S.INTAKE}),
     S.QUEUED: frozenset({S.ASSIGNED_AGENT, S.ASSIGNED_AI}),
-    S.ASSIGNED_AI: frozenset({S.ASSIGNED_AGENT, S.WAITING_APPROVAL, S.SOLVED}),
+    # AssignedAI → Queued: an automatic reply was held, so the case goes back for a person.
+    S.ASSIGNED_AI: frozenset({S.ASSIGNED_AGENT, S.WAITING_APPROVAL, S.SOLVED, S.QUEUED}),
     # AssignedAgent → Queued is a manual reroute to another queue.
     S.ASSIGNED_AGENT: frozenset({S.WAITING_APPROVAL, S.WAITING_ON_CUSTOMER, S.SOLVED, S.QUEUED}),
     S.WAITING_ON_CUSTOMER: frozenset({S.QUEUED}),

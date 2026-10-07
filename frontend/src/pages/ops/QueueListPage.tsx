@@ -10,7 +10,8 @@ import { useLoad } from "../../lib/useLoad";
 function settingsTags(queue: Queue): string[] {
   const s = queue.settings;
   const tags: string[] = [];
-  if (s.gen_ai_allowed) tags.push(s.auto_send ? "AI auto-send" : "AI drafts");
+  if (s.gen_ai_allowed) tags.push("AI drafts");
+  if (s.auto_send) tags.push(`Auto-reply after ${s.auto_send_delay_minutes / 60}h`);
   if (s.approval_threshold !== null) tags.push(`Approval > ${s.approval_threshold}`);
   if (s.sla_first_response_hours !== null) tags.push(`SLA ${s.sla_first_response_hours}h`);
   return tags;

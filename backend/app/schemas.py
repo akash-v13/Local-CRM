@@ -237,6 +237,17 @@ class MatchCriteria(BaseModel):
     )
 
 
+DEFAULT_AUTO_REPLY = (
+    "Hi {{customer.first_name}},\n\n"
+    "Thank you for getting in touch about {{case.order}}, and I'm sorry for the trouble. "
+    "{{compensation.sentence}}\n\n"
+    "If there's anything else I can help with, just reply to this message.\n\n"
+    "Best regards,\n{{business.name}}"
+)
+# What a standard reply's {{placeholders}} can start with (see services/auto_reply.py).
+AUTO_REPLY_ROOTS = {"customer", "case", "compensation", "business", "enrichment"}
+
+
 class QueueSettings(BaseModel):
     """How cases in this queue are handled.
 
@@ -245,7 +256,28 @@ class QueueSettings(BaseModel):
     """
 
     gen_ai_allowed: bool = False
-    auto_send: bool = False
+    auto_send: bool = Field(
+        default=False,
+        description="Reply to new cases automatically, after a delay (services/auto_reply.py).",
+    )
+    auto_send_mode: Literal["template", "ai"] = Field(
+        default="template",
+        description="template: the standard reply below with the case's details filled in. "
+        "ai: written by the AI from the business's prompt templates.",
+    )
+    auto_send_delay_minutes: int = Field(
+        default=360,
+        ge=0,
+        le=2880,
+        description="Wait this long before sending (a person may still step in). 6 hours default.",
+    )
+    auto_send_template: str = Field(
+        default=DEFAULT_AUTO_REPLY,
+        min_length=1,
+        max_length=5000,
+        description="The standard reply. Placeholders: {{customer.first_name}}, "
+        "{{case.order}}, {{compensation.sentence}}, {{business.name}}…",
+    )
     approval_threshold: float | None = Field(
         default=None, ge=0, description="Compensation above this amount needs approval."
     )
@@ -257,6 +289,25 @@ class QueueSettings(BaseModel):
     ai_effort: Literal["low", "medium", "high"] = Field(
         default="low", description="Thinking effort (Sonnet/Opus only)."
     )
+
+    @model_validator(mode="after")
+    def _check_auto_send(self) -> "QueueSettings":
+        if self.auto_send and self.auto_send_mode == "ai" and not self.gen_ai_allowed:
+            raise ValueError("AI-written automatic replies need 'Allow AI to draft replies' on.")
+        unknown = sorted(
+            {
+                p
+                for p in placeholders(self.auto_send_template)
+                if p.split(".")[0] not in AUTO_REPLY_ROOTS
+            }
+        )
+        if unknown:
+            raise ValueError(
+                "Unknown placeholder(s) in the standard reply: "
+                + ", ".join("{{" + p + "}}" for p in unknown)
+                + ". Use customer., case., compensation., business. or enrichment."
+            )
+        return self
 
 
 class QueueCreate(BaseModel):
@@ -1566,6 +1617,22 @@ class StripeCheckResult(BaseModel):
     ok: bool
     mode: str | None = None
     detail: str
+
+
+# ----- automatic replies -----------------------------------------------------------------------
+
+
+class AutoReplyAction(BaseModel):
+    actor_id: str = Field(min_length=1)
+
+
+class AutoReplyPreviewRequest(BaseModel):
+    case_number: int
+    template: str = Field(min_length=1, max_length=5000)
+
+
+class AutoReplyPreview(BaseModel):
+    reply: str
 
 
 # ----- setup and integrations ------------------------------------------------------------------

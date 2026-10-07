@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.api import (
+    auto_reply,
     cases,
     compensation,
     connectors,
@@ -59,6 +60,7 @@ app.include_router(mailboxes.router)
 app.include_router(mailboxes.case_router)
 app.include_router(reading.router)
 app.include_router(reading.case_router)
+app.include_router(auto_reply.router)
 app.include_router(payouts.router)
 app.include_router(payouts.case_router)
 app.include_router(shopify.router)

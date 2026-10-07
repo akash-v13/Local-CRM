@@ -24,6 +24,7 @@ def test_transitions_only_point_to_known_statuses() -> None:
         (S.INTAKE, S.ENRICHMENT_FAILED),
         (S.QUEUED, S.ASSIGNED_AI),
         (S.ASSIGNED_AI, S.ASSIGNED_AGENT),  # AI hands off to a human
+        (S.ASSIGNED_AI, S.QUEUED),  # automatic reply held: back to the queue
         (S.ASSIGNED_AGENT, S.QUEUED),  # manual reroute
         (S.WAITING_APPROVAL, S.ASSIGNED_AGENT),  # approver rejected
         (S.SOLVED, S.QUEUED),  # customer replied within the reopen window

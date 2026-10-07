@@ -646,6 +646,13 @@ def seed_shopify(api: Api) -> None:
         },
     )
     print("  rules on Shopify data + payouts through Shopify ✓")
+    # An owner-run store: new cases are answered automatically, 6 hours later (standard reply).
+    general = next(q for q in api.get(f"{t}/queues") if q["name"] == "General")
+    api.patch(
+        f"{t}/queues/{general['id']}",
+        {"settings": {**general["settings"], "auto_send": True, "auto_send_delay_minutes": 360}},
+    )
+    print("  automatic replies after 6 hours ✓")
 
     def case(name: str, email: str, sub: str, category: str, order: str | None, text: str) -> int:
         created = api.post(

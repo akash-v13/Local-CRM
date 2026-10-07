@@ -20,6 +20,7 @@ import type {
   CompensationPreview,
   CompensationRule,
   CompensationRuleInput,
+  AutoReplyState,
   CompensationSettings,
   Payout,
   PayoutListRow,
@@ -266,6 +267,14 @@ export const api = {
       `/tenants/${tenantId}/cases/${caseNumber}/compensation/${approve ? "approve" : "reject"}`,
       { actor_id: actorId, note: note || null },
     ),
+
+  // Automatic replies
+  autoReplySendNow: (tenantId: string, caseNumber: number, actorId: string) =>
+    post<AutoReplyState>(`/tenants/${tenantId}/cases/${caseNumber}/auto-reply/send-now`, { actor_id: actorId }),
+  autoReplyCancel: (tenantId: string, caseNumber: number, actorId: string) =>
+    post<AutoReplyState>(`/tenants/${tenantId}/cases/${caseNumber}/auto-reply/cancel`, { actor_id: actorId }),
+  previewAutoReply: (tenantId: string, caseNumber: number, template: string) =>
+    post<{ reply: string }>(`/tenants/${tenantId}/auto-reply/preview`, { case_number: caseNumber, template }),
 
   // Payouts (issuing approved compensation through Stripe)
   payoutSettings: (tenantId: string) => request<PayoutSettings>(`/tenants/${tenantId}/payouts/settings`),

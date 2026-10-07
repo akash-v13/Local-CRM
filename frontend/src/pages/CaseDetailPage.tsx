@@ -2,6 +2,7 @@ import { Fragment, useEffect } from "react";
 import { Link, useParams } from "react-router";
 
 import { api } from "../api/client";
+import { AutoReplyCard } from "../components/AutoReplyCard";
 import { CompensationCard } from "../components/CompensationCard";
 import { ReadingCard } from "../components/ReadingCard";
 import { EnrichmentCard } from "../components/EnrichmentCard";
@@ -109,6 +110,13 @@ export function CaseDetailPage() {
         </div>
 
         <aside className="case-side">
+          {c.decisions.auto_reply && (
+            <div className="card">
+              <h2>Automatic reply</h2>
+              <AutoReplyCard caseDetail={c} agentId={agentId} onChanged={refresh} />
+            </div>
+          )}
+
           <div className="card">
             <h2>Customer</h2>
             <dl className="details">

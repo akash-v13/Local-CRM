@@ -91,7 +91,7 @@ Say we want **"reroute a case to another queue"** (Idea 8: manual reroute that p
 | One-click Shopify install | a public Shopify app: OAuth (authorization code grant with expiring offline tokens), mandatory compliance webhooks and App Store review, with the callback in the planned cloud relay (it holds the app secret) |
 | Cash payouts (PayPal / Wise / Tremendous) | another provider next to `app/payouts/stripe.py`; `Payout.provider` and `PayoutMethod` already allow it |
 | Inbox OAuth (Google Workspace, Microsoft 365) | an OAuth credential type for `ImapSmtpTransport` (XOAUTH2) |
-| SLA timers, approvals, AI auto-send | settings already saved on queues; enforcement not built |
+| SLA timers | `sla_first_response_hours` is saved on queues; not enforced yet |
 | AI recategorization | Idea 8 in the product ideas log |
 
 ## 7. The frontend
@@ -218,6 +218,19 @@ flowchart LR
 | Test lab | `services/template_tests.py` | One template as edited, **pinned into its layer for every input**, × models × inputs × runs, on the worker (job `template_test`). Free cost estimate first. |
 
 **Configuration:** `ANTHROPIC_API_KEY` (backend and worker). Without it drafting is off and every AI action says how to enable it.
+
+### Automatic replies
+
+`services/auto_reply.py`. Queue settings: `auto_send`, `auto_send_mode` (`template` | `ai`), `auto_send_delay_minutes` (default 360, max 2880), `auto_send_template` (placeholders under `customer.`, `case.`, `compensation.`, `business.`, `enrichment.`; unknown roots are rejected; an AI mode needs `gen_ai_allowed`).
+
+| Step | What happens |
+|---|---|
+| Routing | `CaseService.apply_routing`, on a case's **first** routing, after the compensation decision: `queue_auto_reply` adds an `auto_reply` job (`step: prepare`) and records `decisions.auto_reply = {status: preparing}`. |
+| Prepare | Waits (re-queues every 2 min, up to ~1 h) while a payout is in flight. Holds when `hold_reason` says so (compensation pending approval, payout failed, a complaint with `no_match`, a reading field `needs_review`). Template: `render_reply` (a missing path holds it; empty values are fine) → a `system`-authored draft message. AI: `DraftService.draft_for_case` (needs the worker's writer); `needs_attention` or check warnings hold it. Then Queued → **AssignedAI**, `status: scheduled`, `send_at`, and a `step: send` job due at `send_at` (`payload.due` = `send_at`). |
+| Send | Skips unless still `scheduled` and the job's `due` matches (Send now supersedes the old job). Cancels if the case left AssignedAI (someone took it); holds (back to Queued) if the customer wrote after `scheduled_at` or a hold reason appeared. A template reply is rendered again (final voucher code). `add_message(agent_reply, author_type="ai", from_draft_id, then_status=Solved)`, so email cases are emailed as usual. |
+| People | `AutoReplyService.send_now` (new send job due now), `cancel` (→ AssignedAgent for that person; the draft stays), `preview` (render a template for a case). |
+
+Lifecycle: `AssignedAI → Queued` was added for held replies. Events: `auto_reply.scheduled`, `.held`, `.released`, `.cancelled`, `.sent`. Tests: `tests/test_auto_reply.py`.
 
 ## 12. Compensation matrix
 
@@ -436,6 +449,8 @@ Full, always-current reference: http://localhost:8000/docs.
 | POST | `/tenants/{t}/shopify/check` | Get a token and read the store's name |
 | POST | `/tenants/{t}/shopify/lookup` | Look an order up now (for a case, or an order number / email); saves nothing |
 | GET, POST | `/tenants/{t}/cases/{c}/payouts` | A case's payouts / issue its approved compensation now (or retry after a failure; never pays twice) |
+| POST | `/tenants/{t}/cases/{c}/auto-reply/send-now`, `/cancel` | Send a scheduled automatic reply now / cancel it (the person takes the case) |
+| POST | `/tenants/{t}/auto-reply/preview` | A standard reply (saved or not) filled in for a case |
 | GET | `/tenants/{t}/pipeline` | The intake pipeline: steps in order, dependencies, problems, queues, rules |
 | GET | `/tenants/{t}/pipeline/executions?outcome=&limit=` | Recent cases' runs (per-step status, time, queue, compensation) |
 | GET | `/tenants/{t}/pipeline/executions/{c}` | One case's run with requests, data, routing and compensation |
