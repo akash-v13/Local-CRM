@@ -19,5 +19,8 @@ class Tenant(IdMixin, CreatedAtMixin, Base):
     reading_settings: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
     # Issuing compensation (Stripe credential, methods, payment lookup); services/payouts.py.
     payout_settings: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    # Where the business sells (Shopify, marketplaces, own website, in store), from the
+    # setup screen; drives the setup checklist and recommended integrations (services/setup.py).
+    profile: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
     # The business's Shopify store (credential, order lookup); services/shopify.py.
     shopify_settings: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)

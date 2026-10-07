@@ -1922,3 +1922,132 @@ a.tab {
   border-left-style: double;
   border-left-width: 5px;
 }
+
+/* ----- setup and integrations ----- */
+
+.channel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  margin: 0.5rem 0 1rem;
+}
+.channel-tile {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  background: var(--surface);
+}
+.channel-tile.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.channel-tile input {
+  justify-self: start;
+}
+.channel-title {
+  font-weight: 600;
+}
+.channel-detail {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.setup-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+}
+.setup-steps li {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border);
+}
+.setup-steps li p {
+  margin: 0.2rem 0 0;
+}
+.setup-steps .tag {
+  margin-left: 0.5rem;
+}
+.setup-mark {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+}
+.setup-steps li.done .setup-mark {
+  color: var(--good);
+}
+.setup-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  border-left: 4px solid var(--accent);
+}
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+.integration-group {
+  margin-bottom: 1.5rem;
+}
+.integration-group h2 {
+  margin-bottom: 0.1rem;
+}
+.integration-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.integration-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.9rem;
+}
+.integration-card p {
+  margin: 0;
+  flex: 1;
+}
+.integration-card.status-coming_soon {
+  opacity: 0.75;
+}
+.integration-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+}
+.integration-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.integration-head .tag {
+  white-space: nowrap;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+.tag.integration-connected {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.tag.integration-needs_attention {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.tag.integration-coming_soon {
+  background: var(--surface-2);
+}

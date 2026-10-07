@@ -24,6 +24,9 @@ import type {
   Payout,
   PayoutListRow,
   PayoutSettings,
+  BusinessProfile,
+  IntegrationCard,
+  SetupInfo,
   ShopifyCheckResult,
   ShopifyInfo,
   ShopifyLookupResult,
@@ -276,6 +279,12 @@ export const api = {
     request<Payout[]>(`/tenants/${tenantId}/cases/${caseNumber}/payouts`),
   payNow: (tenantId: string, caseNumber: number, actorId: string) =>
     post<Payout>(`/tenants/${tenantId}/cases/${caseNumber}/payouts`, { actor_id: actorId }),
+
+  // Setup (where the business sells) and the integrations overview
+  getSetup: (tenantId: string) => request<SetupInfo>(`/tenants/${tenantId}/setup`),
+  saveSetup: (tenantId: string, profile: BusinessProfile) => put<SetupInfo>(`/tenants/${tenantId}/setup`, profile),
+  getIntegrations: (tenantId: string) =>
+    request<{ cards: IntegrationCard[] }>(`/tenants/${tenantId}/integrations`).then((r) => r.cards),
 
   // Shopify (order lookup, and issuing compensation on the store)
   getShopify: (tenantId: string) => request<ShopifyInfo>(`/tenants/${tenantId}/shopify`),

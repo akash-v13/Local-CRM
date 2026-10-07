@@ -151,6 +151,7 @@ sequenceDiagram
 | Reading messages | `app/ai/reading.py`, `app/ai/readers.py` (Jev, Claude), `services/reading.py`, `api/reading.py`, worker job `read_case` | `ReadingPage`, `ReadingCard`, pipeline step ⓪ | `test_reading`, `ReadingCard.test` | [§15](../dev/codebase-guide.md#15-reading-messages) |
 | Payouts (Stripe) | `app/payouts/stripe.py`, `services/payouts.py`, `api/payouts.py`, `models/payout.py`, worker job `issue_payout` | `PayoutsPage`, `CompensationCard` (payout line), `lib/payouts.ts` | `test_payouts`, `CompensationCard.test`, `lib/payouts.test.ts` | [§16](../dev/codebase-guide.md#16-payouts-stripe-and-shopify) |
 | Shopify | `app/shopify/` (client, orders), `services/shopify.py`, `api/shopify.py`, credential kind `shopify` in `connectors/auth.py`, `_call_shopify` in `services/payouts.py`, `email/parse.contact_form` | `ShopifyPage`, Shopify methods on `PayoutsPage`, step ① in `lib/pipeline.ts` | `test_shopify`, `test_email` (contact forms), `ShopifyPage.test` | [§17](../dev/codebase-guide.md#17-shopify) |
+| Setup & integrations | `services/setup.py`, `api/setup.py`, `tenants.profile` | `SetupPage` (+ dashboard `SetupBanner`), `IntegrationsPage`, `OpsLayout` | `test_setup`, `SetupPage.test` | [§18](../dev/codebase-guide.md#18-setup-and-integrations) |
 | Demo data | `scripts/seed_demo.py`, `mocks/shop.py` (orders, shipments, loyalty, fake Stripe), `mocks/shopify.py` (fake Shopify) | — | (runs the whole flow) | this handbook |
 
 ---
@@ -211,7 +212,7 @@ These rules protect customer data and money.
 3. **Route:** add it in `api/<area>.py`. Keep it to about three lines: parse, call the service, return.
 4. **New router?** Include it in `main.py`. New error type? Add it to `domain/errors.py` and `ERROR_STATUS_CODES`.
 5. **Tests:** cover the happy path, a 404 for another tenant, and validation (422).
-6. **Docs:** add a row to the endpoint table ([Codebase §18](../dev/codebase-guide.md#18-api-endpoints)).
+6. **Docs:** add a row to the endpoint table ([Codebase §19](../dev/codebase-guide.md#19-api-endpoints)).
 
 The full worked example is in [Codebase §4](../dev/codebase-guide.md#4-adding-a-feature-worked-example).
 
@@ -294,7 +295,7 @@ Edit the files in `backend/app/ai/templates/defaults/`.
 | Case stuck in **Intake** | The worker: `docker compose logs -f worker`. Check jobs with `docker compose exec db psql -U resolve -c "select kind,status,attempts,last_error from jobs order by created_at desc limit 10"` |
 | Connector fails | Connector editor → **Test & pick fields** shows the exact request and response. The mock API's special order numbers (`404`, `500`, `SLOW`) reproduce failures. |
 | AI draft fails | The error message names the cause (key, credit, rate limit, template). Template problems: open the template → **Preview** with that case. |
-| Emails not becoming cases | **Operations → Email** shows the inbox's last error. Locally, GreenMail (`mail` service) accepts any password: send a test email with `swaks`/Python `smtplib` to `localhost:3025`, read any mailbox over IMAP on `localhost:3143`. Worker logs show `poll_mailbox` / `send_email` jobs. |
+| Emails not becoming cases | **Operations → Integrations → Email inboxes** shows the inbox's last error. Locally, GreenMail (`mail` service) accepts any password: send a test email with `swaks`/Python `smtplib` to `localhost:3025`, read any mailbox over IMAP on `localhost:3143`. Worker logs show `poll_mailbox` / `send_email` jobs. |
 | Wrong queue or compensation | The editors' **Test with a real case** panels explain every condition with the case's actual values. |
 | Data | `docker compose exec db psql -U resolve`, or connect a DB client to `localhost:5432` (user/password/db `resolve`, local only). See [database guide §7](../dev/database-guide.md#7-looking-at-the-data). |
 | Start over | `docker compose down -v` deletes all local data. Then `docker compose up -d` and reseed. |

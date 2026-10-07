@@ -87,12 +87,24 @@ flowchart LR
 
 > **Temporary:** there's no sign-in yet. The business picker and "Acting as" box stand in for logging in. Sign-in comes later.
 
+**New business? Start with Setup.** Creating a business opens **Operations → Setup**: tick where you sell (your Shopify store, a marketplace such as SHOP.COM, your own website, in store or by phone) and you get a short checklist. Each step ticks itself off when it's done, wherever you did it, and the dashboard reminds you until you're finished.
+
+![Setup: where do you sell, and your next steps](images/setup.png)
+
+- **Selling on SHOP.COM or another marketplace?** You don't need a special connection. Link the email inbox on your seller account (B7): when a buyer clicks *Contact*, their message lands there and becomes a case. Order numbers are read out of the messages automatically (B8). The marketplace holds your buyers' payments, so refunds are issued in your seller dashboard; Local CRM records the decision and drafts the reply.
+- **On Shopify?** Connect the store (B10).
+- **Your own website or a shop counter?** Link your support inbox, and optionally Stripe (B9) and your order system (B3b).
+
+**Operations → Integrations** shows everything you can connect in one place, with its status, and marks what's **Suggested** for where you sell. Nothing is locked: you can connect anything.
+
+![Integrations](images/integrations.png)
+
 **The top bar has three areas:**
 
 | Area | For |
 |---|---|
 | **Agent console** | Agents: the case list and individual cases |
-| **Operations** | Managers: dashboard, queues, connectors, credentials, compensation, prompt templates, sample cases |
+| **Operations** | Managers (often the owner): dashboard, setup, integrations, queues, reading, compensation, payouts, prompt templates, sample cases |
 | **Test webform** | Anyone: create a case the way a customer would |
 
 ---
@@ -486,7 +498,7 @@ Set the model per queue under **Queues → Handling**, after comparing them in t
 
 ## B7. Connecting your email inbox
 
-**Operations → Email** connects your support inbox, e.g. `support@yourshop.com`. Once it's connected:
+**Operations → Integrations → Email inboxes** connects your support inbox, e.g. `support@yourshop.com`. Once it's connected:
 - **New emails become cases.** Every new email from a customer becomes a case, whether you've already read it in your mail app or not.
 - **Replies stay together.** A customer's reply to an existing conversation joins that case instead of opening a new one.
 - **Agent replies are emailed** from the same inbox, in the same thread, so the customer sees one conversation in their mail app.
@@ -572,7 +584,7 @@ Stripe can't send cash to a customer's bank account. That needs a different prov
 
 **To set it up with Stripe:**
 1. In Stripe, copy a **secret key**. Start with a test key (`sk_test_…`) and switch to a live key (`sk_live_…`) when you're happy. A restricted key works if it can write Refunds, Customers, Coupons and Promotion codes.
-2. **Operations → Credentials → New credential**, type **Bearer token**, paste the key. It's encrypted and never shown again.
+2. **Operations → Integrations → Credentials → New credential**, type **Bearer token**, paste the key. It's encrypted and never shown again.
 3. **Operations → Payouts:** tick **Issue approved compensation through Shopify or Stripe**; under **Stripe**, choose the credential and click **Check Stripe**. It says whether the key works and whether it's **test** or **live** (real money).
 4. **How each type is issued:** pick a method per compensation type.
 5. **Finding the payment to refund:** most shops put the order number in the Stripe payment's metadata (e.g. `order_id`). Tell the platform which case field has the order number and which metadata key to match. If a connector returns the Stripe payment id (`pi_…`), choose that field instead.
@@ -589,7 +601,7 @@ Stripe can't send cash to a customer's bank account. That needs a different prov
 
 ## B10. Connecting your Shopify store
 
-Under **Operations → Shopify**, connect your store once. From then on every new case comes with its order, and approved compensation can be issued on the store.
+Under **Operations → Integrations → Shopify**, connect your store once. From then on every new case comes with its order, and approved compensation can be issued on the store.
 
 ![Shopify settings and a test lookup](images/shopify.png)
 
@@ -676,8 +688,8 @@ Create a rule *Weather delays: no compensation* with the condition *Shipping tra
 | Question | Answer |
 |---|---|
 | An email case has no order number. | Check **Operations → Reading** is on for email and has an *Order number* field. If the case's **Read from the message** card says "Which one?", pick the right number and click **Re-run enrichment**. |
-| Customer emails aren't becoming cases. | Check **Operations → Email**: the inbox must be *Connected* and active. A problem (e.g. wrong password, IMAP turned off) is shown there. Emails older than the inbox's start date, auto-replies and mailing lists are skipped on purpose. |
-| My email reply shows "Email failed". | The reason is under the message. Usually the inbox's app password changed: update it under **Operations → Email**, then click **Retry** on the message. |
+| Customer emails aren't becoming cases. | Check **Operations → Integrations → Email inboxes**: the inbox must be *Connected* and active. A problem (e.g. wrong password, IMAP turned off) is shown there. Emails older than the inbox's start date, auto-replies and mailing lists are skipped on purpose. |
+| My email reply shows "Email failed". | The reason is under the message. Usually the inbox's app password changed: update it under **Operations → Integrations → Email inboxes**, then click **Retry** on the message. |
 | A case is in the wrong queue. | Use **Move to queue…** on the case (A6). If it keeps happening, fix the queue conditions (B2) and test them with **Test with a real case**. |
 | A case went to General instead of my queue. | No other queue's conditions matched. In the queue editor, **Test with a real case** shows which condition failed and what the case actually had. |
 | Enrichment shows an error. | The other system didn't answer. Try **Re-run enrichment**. If it persists, check **Pipeline → Executions** for the error and send it to your technical team ([Integration guide §9](integration-guide.md#9-watching-executions-and-troubleshooting)). |
@@ -688,7 +700,7 @@ Create a rule *Weather delays: no compensation* with the condition *Shipping tra
 | I can't click *Decide again*. | The decision was already approved or rejected. Those are final, because the customer may already have been told. |
 | A payout failed: *Couldn't find the Stripe payment for order …* | The order number isn't in any Stripe payment's metadata under the key set in **Payouts → Finding the payment**. Check the key with your shop, or map the payment id with a connector, then click **Try again**. |
 | Shopify: *No Shopify order NW-…* | The order number on the case isn't in your store. Check what the customer wrote; correct the order number field, then **Re-run enrichment**. |
-| Shopify: *The Shopify app isn't allowed to do this* | The app is missing an access scope. Add it in the Dev Dashboard (the list is on **Operations → Shopify**), release, then **Check connection**. |
+| Shopify: *The Shopify app isn't allowed to do this* | The app is missing an access scope. Add it in the Dev Dashboard (the list is on **Operations → Integrations → Shopify**), release, then **Check connection**. |
 | A Shopify payout failed: *belongs to a different email address* | The order isn't the customer's (or they used another email). Check it in Shopify; if it's fine, issue it by hand. |
 | A payout failed: *No Stripe customer has the email …* | Balance credit needs the customer to exist in Stripe with the same email. Use a voucher code for this type instead, or issue it by hand. |
 | Why do two cases from one customer get different treatment? | The repeat-claim guardrail: a second compensation within the window needs approval. |

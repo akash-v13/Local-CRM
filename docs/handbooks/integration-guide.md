@@ -32,7 +32,7 @@ Everything here can be done in the browser (**Operations** area) or through the 
 
 ---
 
-> **On Shopify?** You don't need a connector for orders: connect the store under **Operations → Shopify** and every case gets its order as step ① (`enrichment.shopify.*`, see the [Business handbook B10](business-handbook.md#b10-connecting-your-shopify-store)). Connectors after it can use those fields, e.g. `{{enrichment.shopify.trackingNumber}}` for a carrier's API. The connector key `shopify` is reserved.
+> **On Shopify?** You don't need a connector for orders: connect the store under **Operations → Integrations → Shopify** and every case gets its order as step ① (`enrichment.shopify.*`, see the [Business handbook B10](business-handbook.md#b10-connecting-your-shopify-store)). Connectors after it can use those fields, e.g. `{{enrichment.shopify.trackingNumber}}` for a carrier's API. The connector key `shopify` is reserved.
 
 ## 1. How enrichment works
 
@@ -86,7 +86,7 @@ The **Executions** tab shows how each real case went through this flow ([§9](#9
 
 ## 3. Add your first API, step by step
 
-**Operations → Connectors → New connector** (or **Add connector** on the Pipeline page). The editor is laid out in seven steps:
+**Operations → Integrations → Your own systems → New connector** (or **Add connector** on the Pipeline page). The editor is laid out in seven steps:
 
 ![Connector editor](images/connector-editor.png)
 
@@ -130,7 +130,7 @@ Placeholders `{{…}}` work in the URL, headers and body. They're filled in for 
 
 ## 5. Authentication
 
-**Operations → Credentials.** Create a credential once and use it in as many connectors as you like.
+**Operations → Integrations → Credentials.** Create a credential once and use it in as many connectors as you like.
 
 ![Credentials](images/credentials.png)
 

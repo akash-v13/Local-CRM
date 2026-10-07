@@ -20,7 +20,8 @@ Also creates "Harbor Goods (Shopify demo)", a small store run by its owner and
 connected to the fake Shopify in the mocks service: order lookup by order number or
 email, rules on Shopify's data (days late, order email matches), and compensation
 issued on the store (a refund, store credit, a discount code), plus a case quoting
-someone else's order. `--no-shopify` skips it.
+someone else's order. `--no-shopify` skips it. And "Seaside Crafts (SHOP.COM seller
+demo)", a marketplace seller who has only answered "Where do you sell?".
 
 It talks to the API like any client would, so it also works as a smoke test.
 Running it again creates another demo business; nothing is overwritten.
@@ -78,6 +79,8 @@ def seed(api: Api, with_ai: bool) -> None:
     )
     t = f"/tenants/{tenant['id']}"
     print(f"Business: {tenant['name']}")
+    # Sells on its own website (setup checklist + integrations suggested for that).
+    api.put(f"{t}/setup", {"sells_on": ["own_site"], "completed": True})
 
     # ----- queues --------------------------------------------------------------------------
     general = next(q for q in api.get(f"{t}/queues") if q["name"] == "General")
@@ -578,6 +581,7 @@ def seed_shopify(api: Api) -> None:
     )
     t = f"/tenants/{tenant['id']}"
     print(f"\nBusiness: {tenant['name']}")
+    api.put(f"{t}/setup", {"sells_on": ["shopify", "marketplace"], "marketplaces": ["SHOP.COM"]})
     # Who placed which order (only the fake Shopify needs telling).
     owners = {
         "#1006": "priya.raman@example.com",
@@ -683,6 +687,19 @@ def seed_shopify(api: Api) -> None:
     print(f"  {len(numbers)} cases looked up in Shopify; {len(issued)} compensations issued ✓")
 
 
+def seed_marketplace(api: Api) -> None:
+    """A SHOP.COM seller who has only said where they sell: shows the setup checklist."""
+    tenant = api.post(
+        "/tenants", {"name": f"Seaside Crafts (SHOP.COM seller demo {int(time.time()) % 10000})"}
+    )
+    info = api.put(
+        f"/tenants/{tenant['id']}/setup",
+        {"sells_on": ["marketplace"], "marketplaces": ["SHOP.COM"]},
+    )
+    done = sum(s["done"] for s in info["steps"])
+    print(f"\nBusiness: {tenant['name']}\n  setup: {done} of {len(info['steps'])} steps done ✓")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--api", default="http://localhost:8000", help="API base URL")
@@ -696,6 +713,7 @@ def main() -> None:
     seed(Api(args.api), args.with_ai)
     if not args.no_shopify:
         seed_shopify(Api(args.api))
+    seed_marketplace(Api(args.api))
 
 
 if __name__ == "__main__":

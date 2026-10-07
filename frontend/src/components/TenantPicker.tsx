@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router";
 
 import { api, errorMessage } from "../api/client";
 import { useSession } from "../context/SessionContext";
@@ -6,11 +7,12 @@ import { useLoad } from "../lib/useLoad";
 
 /**
  * Development-only tenant switcher in the header.
- * Lists tenants from the API and lets you create one. Once real sign-in
+ * Lists tenants from the API and lets you create one (which opens Setup). Once real sign-in
  * exists, the tenant comes from the logged-in user and this goes away.
  */
 export function TenantPicker() {
   const { tenantId, setTenantId } = useSession();
+  const navigate = useNavigate();
   const tenants = useLoad(() => api.listTenants(), []);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -40,6 +42,7 @@ export function TenantPicker() {
       setTenantId(tenant.id);
       setName("");
       setCreating(false);
+      navigate("/ops/setup"); // a new business starts with "Where do you sell?"
       await tenants.reload();
     } catch (err) {
       setError(errorMessage(err));

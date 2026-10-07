@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../api/client";
@@ -16,6 +17,10 @@ const tenant = (id: string, name: string): Tenant => ({ id, name, created_at: "2
 
 function CurrentTenant() {
   return <output>{useSession().tenantId}</output>;
+}
+
+function CurrentPage() {
+  return <p data-testid="page">{useLocation().pathname}</p>;
 }
 
 describe("TenantPicker", () => {
@@ -36,10 +41,13 @@ describe("TenantPicker", () => {
 
     const user = userEvent.setup();
     render(
-      <SessionProvider>
-        <TenantPicker />
-        <CurrentTenant />
-      </SessionProvider>,
+      <MemoryRouter initialEntries={["/cases"]}>
+        <SessionProvider>
+          <TenantPicker />
+          <CurrentTenant />
+          <CurrentPage />
+        </SessionProvider>
+      </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("t-acme"));
 
@@ -52,16 +60,20 @@ describe("TenantPicker", () => {
     await waitFor(() => expect(screen.getByLabelText("Tenant")).toHaveValue("t-new"));
     expect(screen.getByRole("status")).toHaveTextContent("t-new");
     expect(window.localStorage.getItem("resolve.tenantId")).toBe("t-new");
+    expect(screen.getByTestId("page")).toHaveTextContent("/ops/setup"); // a new business starts with Setup
   });
 
   it("forgets a remembered tenant that no longer exists", async () => {
     window.localStorage.setItem("resolve.tenantId", "t-deleted");
     vi.mocked(api.listTenants).mockResolvedValue([tenant("t-acme", "Acme")]);
     render(
-      <SessionProvider>
-        <TenantPicker />
-        <CurrentTenant />
-      </SessionProvider>,
+      <MemoryRouter initialEntries={["/cases"]}>
+        <SessionProvider>
+          <TenantPicker />
+          <CurrentTenant />
+          <CurrentPage />
+        </SessionProvider>
+      </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("t-acme"));
   });
