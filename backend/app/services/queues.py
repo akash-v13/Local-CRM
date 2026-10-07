@@ -38,6 +38,7 @@ from app.schemas import (
     RoutingPreviewRequest,
 )
 from app.services.routing import case_context, to_candidate
+from app.services.shopify import FIELD_LABELS as SHOPIFY_LABELS
 
 CHANNELS = ["webform", "email", "chat", "api"]
 
@@ -173,7 +174,21 @@ class QueueService:
             "customer.tier": self.customers.distinct_tiers(tenant_id),
             "message": [],
         }
-        enrichment_fields = [
+        tenant = self.tenants.get(tenant_id)
+        shopify_fields = (
+            [
+                RoutingField(
+                    key=f"{ENRICHMENT_PREFIX}shopify.{key}",
+                    label=f"Shopify: {label}",
+                    suggestions=[],
+                )
+                for key, label in SHOPIFY_LABELS.items()
+                if key not in ("orderId", "customerId")
+            ]
+            if tenant is not None and (tenant.shopify_settings or {}).get("enabled")
+            else []
+        )
+        enrichment_fields = shopify_fields + [
             RoutingField(
                 key=f"{ENRICHMENT_PREFIX}{c.key}.{m['target']}",
                 label=f"{c.name}: {m.get('label') or m['target']}",

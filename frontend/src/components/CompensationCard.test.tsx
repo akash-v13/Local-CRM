@@ -107,7 +107,7 @@ describe("CompensationCard", () => {
   it("issues approved compensation through Stripe when automatic payouts are off", async () => {
     const user = userEvent.setup();
     const { c, onChanged } = renderCard(APPROVED);
-    await user.click(await screen.findByRole("button", { name: "Issue stripe refund" }));
+    await user.click(await screen.findByRole("button", { name: "Issue Stripe refund" }));
     expect(api.payNow).toHaveBeenCalledWith(c.tenant_id, c.case_number, "mgr.sam");
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
@@ -116,10 +116,10 @@ describe("CompensationCard", () => {
     renderCard({
       ...APPROVED,
       type: "voucher",
-      payout: { id: "p1", status: "succeeded", method: "stripe_voucher", external_id: "promo_1", code: "SORRY-7KQ2-M9XA", error: null },
+      payout: { id: "p1", status: "succeeded", method: "stripe_voucher", external_id: "promo_1", code: "SORRY-7KQ2MX", error: null },
     });
     expect(screen.getByText("Issued")).toBeInTheDocument();
-    expect(screen.getByText("SORRY-7KQ2-M9XA")).toBeInTheDocument();
+    expect(screen.getByText("SORRY-7KQ2MX")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
   });
 

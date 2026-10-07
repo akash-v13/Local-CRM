@@ -38,8 +38,9 @@ Early, but working end to end on a laptop.
 | Intake pipeline view: diagram of every step a case goes through, plus each case's run (Step Functions–style) | ✅ Built |
 | AI reply drafting: layered Jinja prompt templates, PII masking, test lab across Claude models, cost projections | ✅ Built (needs an Anthropic API key) |
 | Compensation matrix: rules, guardrails (approval threshold, repeat claims), approvals, backtest | ✅ Built |
-| Payouts: approved compensation issued through the business's own Stripe account (refunds, balance credit, voucher codes), never twice | ✅ Built (needs a Stripe key) |
-| Cash payouts to customers (PayPal / Wise / Tremendous), Google / Microsoft 365 inbox sign-in (OAuth), storing attachments, SLA timers, AI auto-send, sign-in | 🗓️ Planned |
+| Shopify: connect a store; every case gets its order (total, delivery, tracking, days late); refunds, store credit and discount codes issued on the store; contact-form emails | ✅ Built (own-store app; one-click App Store install planned) |
+| Payouts: approved compensation issued through the business's own Shopify store or Stripe account, never twice | ✅ Built |
+| One-click Shopify install (public app + cloud relay), cash payouts to customers (PayPal / Wise / Tremendous), Google / Microsoft 365 inbox sign-in (OAuth), storing attachments, SLA timers, AI auto-send, sign-in | 🗓️ Planned |
 
 ---
 
@@ -142,12 +143,16 @@ Notes:
 Each business writes its own rules for what a customer gets: a refund, credit, voucher, replacement, points, or nothing. They're checked in priority order and the first match decides. The amount is fixed or a percentage of a case value (e.g. 25% of the order total), with an optional cap. A decision goes to a person for approval when the rule says so, the amount is above the queue's threshold, or the customer was compensated recently. The **backtest** shows what the rules would have decided and cost on recent cases before you switch them on. AI drafts only mention compensation once it's approved.
 → [Codebase guide §12](docs/dev/codebase-guide.md#12-compensation-matrix)
 
-### Payouts (Stripe)
-Approved compensation can be issued through the business's **own** Stripe account, automatically or when an agent clicks **Issue**: a refund to the original payment (found by the order number in the payment's metadata, or a PaymentIntent id from a connector), a credit on the customer's Stripe balance, or a single-use promotion code that AI drafts then quote. Local CRM never holds money. Each decision has one idempotency key, so retries, worker restarts and double clicks can't pay twice. After an unclear Stripe error it first looks for what it created before trying again. Failures are explained on the case and can be retried after fixing the cause. Stripe can't send cash to a customer's bank; that needs a second provider later.
-→ [Business handbook B9](docs/handbooks/business-handbook.md#b9-payouts-issuing-compensation-through-stripe) · [Codebase guide §16](docs/dev/codebase-guide.md#16-payouts-stripe)
+### Shopify
+Built for small retailers on Shopify. Under **Operations → Shopify** the owner connects their store with the client ID and secret of an app they create in Shopify's Dev Dashboard (guided on the page; the 24-hour access token is generated and refreshed automatically). From then on, step ① of every new case finds its order, by the order number the customer gave or else their latest order by email, and saves the total, payment and fulfilment status, carrier and tracking, delivery dates, **days late**, the customer's order count and spend, and whether the order's email **matches the customer's**. Rules use these directly (e.g. *Late 5+ days and email matches → 30% refund*). An order number that isn't found is reported, never swapped for another order. Approved compensation can be issued on the store: a **refund** to the order's original payment (with Shopify's mandatory idempotency key), **store credit**, or a single-use **discount code**. Shopify contact-form emails become cases for the real customer, not for Shopify's sender.
+→ [Business handbook B10](docs/handbooks/business-handbook.md#b10-connecting-your-shopify-store) · [Codebase guide §17](docs/dev/codebase-guide.md#17-shopify)
+
+### Payouts (Shopify and Stripe)
+Approved compensation can be issued through the business's **own** Shopify store (above) or Stripe account, automatically or when an agent clicks **Issue**: a refund to the original payment (found by the order number in the payment's metadata, or a PaymentIntent id from a connector), a credit on the customer's Stripe balance, or a single-use promotion code that AI drafts then quote. Local CRM never holds money. Each decision has one idempotency key, so retries, worker restarts and double clicks can't pay twice. After an unclear Stripe error it first looks for what it created before trying again. Failures are explained on the case and can be retried after fixing the cause. Stripe can't send cash to a customer's bank; that needs a second provider later.
+→ [Business handbook B9](docs/handbooks/business-handbook.md#b9-payouts-issuing-compensation-through-shopify-or-stripe) · [Codebase guide §16](docs/dev/codebase-guide.md#16-payouts-stripe-and-shopify)
 
 ### Operations Portal
-This is for managers. It has a dashboard (open cases, a queue × status table), the intake pipeline view, and the editors for email inboxes, reading, queues, connectors, credentials, compensation rules, payouts, prompt templates and sample cases.
+This is for managers. It has a dashboard (open cases, a queue × status table), the intake pipeline view, and the editors for Shopify, email inboxes, reading, queues, connectors, credentials, compensation rules, payouts, prompt templates and sample cases.
 
 ---
 

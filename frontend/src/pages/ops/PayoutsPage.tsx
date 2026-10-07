@@ -7,17 +7,17 @@ import { Field } from "../../components/Field";
 import { useSession } from "../../context/SessionContext";
 import { TYPE_LABELS } from "../../lib/compensation";
 import { formatCaseNumber, formatDateTime } from "../../lib/format";
-import { ALLOWED_METHODS, METHOD_LABELS, METHOD_SHORT, PAYOUT_STATUS_LABELS, stripeDashboardUrl } from "../../lib/payouts";
+import { ALLOWED_METHODS, METHOD_LABELS, METHOD_SHORT, PAYOUT_STATUS_LABELS, externalLabel, payoutUrl } from "../../lib/payouts";
 import { useLoad } from "../../lib/useLoad";
 
 const TYPES = Object.keys(ALLOWED_METHODS) as (keyof typeof ALLOWED_METHODS)[];
 const STATUSES: PayoutStatus[] = ["succeeded", "failed", "retrying", "processing", "queued"];
 
 /**
- * Issuing approved compensation through the business's own Stripe account:
- * which credential holds the key, how each compensation type is issued, how
- * the original payment is found for refunds, and the payouts made so far.
- * Local CRM never holds money: Stripe moves it, from the business's account.
+ * Issuing approved compensation through the business's own Shopify store or
+ * Stripe account: how each compensation type is issued, the Stripe key and how
+ * Stripe payments are found for refunds, code settings, and the payouts made so
+ * far. Local CRM never holds money: Shopify or Stripe moves it.
  * Route: /ops/payouts
  */
 export function PayoutsPage() {
@@ -81,20 +81,50 @@ export function PayoutsPage() {
         <div>
           <h1>Payouts</h1>
           <p className="muted">
-            Issue approved compensation through your own Stripe account: refunds to the original payment, credit on
-            the customer's balance, or a single-use voucher code. Local CRM never holds money; it asks Stripe, once
-            per decision, and records what Stripe did. Cash to a customer's bank isn't available yet.
+            Issue approved compensation through your own Shopify store or Stripe account: refunds to the original
+            payment, store credit, or a single-use discount code. Local CRM never holds money; it asks Shopify or
+            Stripe, once per decision, and records what they did. Cash to a customer's bank isn't available yet.
           </p>
         </div>
       </div>
 
       <form className="editor-main" onSubmit={save} noValidate>
         <div className="card form-card">
-          <h2>1. Stripe account</h2>
+          <h2>1. When to issue</h2>
           <label className="checkbox">
             <input type="checkbox" checked={settings.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
-            Issue compensation through Stripe
+            Issue approved compensation through Shopify or Stripe
           </label>
+          <label className="checkbox">
+            <input type="checkbox" checked={settings.auto_pay} onChange={(e) => set({ auto_pay: e.target.checked })} />
+            Issue automatically as soon as compensation is approved (otherwise an agent clicks Issue on the case)
+          </label>
+        </div>
+
+        <div className="card form-card">
+          <h2>2. How each type is issued</h2>
+          <div className="grid-2">
+            {TYPES.map((type) => (
+              <Field key={type} label={TYPE_LABELS[type]}>
+                {(id) => (
+                  <select id={id} value={settings.methods[type] ?? "manual"}
+                    onChange={(e) => set({ methods: { ...settings.methods, [type]: e.target.value as PayoutMethod } })}>
+                    {ALLOWED_METHODS[type].map((m) => <option key={m} value={m}>{METHOD_LABELS[m]}</option>)}
+                  </select>
+                )}
+              </Field>
+            ))}
+          </div>
+          <p className="hint">
+            <strong>Shopify</strong> (needs your store connected under <Link to="/ops/shopify">Shopify</Link>): refund the order to its
+            original payment, add store credit to the customer's account, or create a single-use discount code.{" "}
+            <strong>Stripe</strong>: refund the payment, a balance credit for the customer's next invoice (subscriptions and
+            invoices only), or a single-use promotion code. <strong>By hand</strong>: an agent issues it outside Local CRM.
+          </p>
+        </div>
+
+        <div className="card form-card">
+          <h2>3. Stripe (only for Stripe methods)</h2>
           <Field label="Stripe secret key (credential)">
             {(id) => (
               <select id={id} value={settings.credential_id ?? ""} onChange={(e) => { set({ credential_id: e.target.value || null }); setCheck(undefined); }}>
@@ -119,36 +149,7 @@ export function PayoutsPage() {
               </span>
             )}
           </div>
-          <label className="checkbox">
-            <input type="checkbox" checked={settings.auto_pay} onChange={(e) => set({ auto_pay: e.target.checked })} />
-            Issue automatically as soon as compensation is approved (otherwise an agent clicks Issue on the case)
-          </label>
-        </div>
-
-        <div className="card form-card">
-          <h2>2. How each type is issued</h2>
-          <div className="grid-2">
-            {TYPES.map((type) => (
-              <Field key={type} label={TYPE_LABELS[type]}>
-                {(id) => (
-                  <select id={id} value={settings.methods[type] ?? "manual"}
-                    onChange={(e) => set({ methods: { ...settings.methods, [type]: e.target.value as PayoutMethod } })}>
-                    {ALLOWED_METHODS[type].map((m) => <option key={m} value={m}>{METHOD_LABELS[m]}</option>)}
-                  </select>
-                )}
-              </Field>
-            ))}
-          </div>
-          <p className="hint">
-            <strong>Refund the payment</strong>: back to the card or account the customer paid with.{" "}
-            <strong>Balance credit</strong>: a credit on the customer's Stripe balance, used on their next invoice
-            (subscriptions and invoices only). <strong>Voucher code</strong>: a single-use Stripe promotion code for
-            their next checkout. <strong>By hand</strong>: an agent issues it outside Local CRM.
-          </p>
-        </div>
-
-        <div className="card form-card">
-          <h2>3. Finding the payment to refund</h2>
+          <h3 className="lab-subtitle">Finding the payment to refund</h3>
           <Field label="Case field with the Stripe payment id (optional)">
             {(id) => (
               <input id={id} list="payout-fields" value={settings.payment_field ?? ""} placeholder="e.g. enrichment.shop_orders.paymentIntentId"
@@ -169,7 +170,7 @@ export function PayoutsPage() {
         </div>
 
         <div className="card form-card">
-          <h2>4. Vouchers</h2>
+          <h2>4. Voucher and discount codes</h2>
           <div className="grid-2">
             <Field label="Code prefix">
               {(id) => <input id={id} value={settings.voucher_prefix} onChange={(e) => set({ voucher_prefix: e.target.value.toUpperCase() })} />}
@@ -181,7 +182,7 @@ export function PayoutsPage() {
               )}
             </Field>
           </div>
-          <p className="hint">Codes look like {settings.voucher_prefix || "SORRY"}-7KQ2-M9XA, work once, only for that customer when Stripe knows them, and appear in AI drafts once issued.</p>
+          <p className="hint">Codes look like {settings.voucher_prefix || "SORRY"}-7KQ2MX, work once, only for that customer when Shopify or Stripe knows them, and appear in AI drafts once issued. Used for Stripe vouchers and Shopify discount codes.</p>
         </div>
 
         {error && <p className="error pre-line" role="alert">{error}</p>}
@@ -218,11 +219,11 @@ function RecentPayouts({ tenantId }: { tenantId: string }) {
         <div className="payouts-table">
           <table className="table">
             <thead>
-              <tr><th>When</th><th>Case</th><th>Customer</th><th>How</th><th className="num">Amount</th><th>Status</th><th>Stripe</th></tr>
+              <tr><th>When</th><th>Case</th><th>Customer</th><th>How</th><th className="num">Amount</th><th>Status</th><th>Link</th></tr>
             </thead>
             <tbody>
               {payouts.data.map((p) => {
-                const url = stripeDashboardUrl(p);
+                const url = payoutUrl(p);
                 return (
                   <tr key={p.id}>
                     <td className="small">{formatDateTime(p.created_at)}</td>
@@ -235,7 +236,7 @@ function RecentPayouts({ tenantId }: { tenantId: string }) {
                       {p.error && p.status !== "succeeded" && <div className="error small">{p.error}</div>}
                     </td>
                     <td className="small">
-                      {url ? <a href={url} target="_blank" rel="noreferrer">{p.external_id} ↗</a> : (p.external_id ?? "—")}
+                      {url ? <a href={url} target="_blank" rel="noreferrer">{externalLabel(p.external_id ?? "")} ↗</a> : (p.external_id ? externalLabel(p.external_id) : "—")}
                     </td>
                   </tr>
                 );

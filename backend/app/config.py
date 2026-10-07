@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # http://mocks:8100/stripe); each business's own Stripe key decides test vs live.
     stripe_api_base: str = "https://api.stripe.com"
 
+    # --- Shopify -----------------------------------------------------------------------
+    # Empty = each store at https://<shop>.myshopify.com. Local demos set the mock API's
+    # fake Shopify (http://mocks:8100/shopify), which then serves /shopify/<shop>/admin/...
+    shopify_api_base: str = ""
+
     # Background worker: seconds between checks for new jobs when idle.
     worker_poll_seconds: float = 1.0
 

@@ -2,8 +2,8 @@
 
 Static kinds (api_key, bearer, basic) just become a header.
 
-Token kinds (oauth2_client_credentials, token_request) call a "generate token"
-API first. The token is:
+Token kinds (oauth2_client_credentials, token_request, and shopify with a client
+id + secret) call a "generate token" API first. The token is:
 - cached on the credential row, **encrypted**, with its expiry time, so every
   connector and every worker shares one token instead of requesting a new one
   per call;
@@ -34,8 +34,10 @@ from app.models import Credential
 from app.models.base import utcnow
 from app.security.secrets import SecretDecryptionError, decrypt_secret, encrypt_secret
 from app.security.ssrf import UnsafeUrlError, check_url
+from app.shopify.client import shop_base_url
 
-TOKEN_KINDS = {"oauth2_client_credentials", "token_request"}
+TOKEN_KINDS = {"oauth2_client_credentials", "token_request", "shopify"}
+SHOPIFY_HEADER = "X-Shopify-Access-Token"
 # Refresh this long before the token's stated expiry, so a call never starts
 # with a token that dies mid-flight. Short-lived tokens use 10% of their lifetime.
 EXPIRY_MARGIN = timedelta(seconds=60)
@@ -113,6 +115,19 @@ def fetch_token(
         headers["Content-Type"] = "application/x-www-form-urlencoded"
         body = urlencode(form)
         token_path, expires_path, default_ttl = "access_token", "expires_in", 3600
+    elif credential.kind == "shopify":
+        # Shopify's client credentials grant: a 24-hour token for the app's own store.
+        method = "POST"
+        url = shop_base_url(config["shop"], settings.shopify_api_base) + "/admin/oauth/access_token"
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        body = urlencode(
+            {
+                "grant_type": "client_credentials",
+                "client_id": secrets.get("client_id", ""),
+                "client_secret": secrets.get("client_secret", ""),
+            }
+        )
+        token_path, expires_path, default_ttl = "access_token", "expires_in", 86_399
     else:
         context = {"secret": secrets}
         try:
@@ -195,7 +210,9 @@ class AuthProvider:
                 raise CredentialError("The connector's credential no longer exists.")
             secrets = load_secrets(credential)
 
-            if credential.kind not in TOKEN_KINDS:
+            if credential.kind not in TOKEN_KINDS or (
+                credential.kind == "shopify" and secrets.get("access_token")
+            ):
                 return self._static(credential, secrets)
 
             now = utcnow()
@@ -219,6 +236,8 @@ class AuthProvider:
             if credential.kind == "token_request":
                 name = credential.config["header_name"]
                 value = credential.config["header_prefix"] + token
+            elif credential.kind == "shopify":
+                name, value = SHOPIFY_HEADER, token
             else:
                 name, value = "Authorization", f"Bearer {token}"
             return AppliedAuth({name: value}, {name}, refreshable=True)
@@ -230,6 +249,8 @@ class AuthProvider:
                 name, value = credential.config["header_name"], secrets["key"]
             elif credential.kind == "bearer":
                 name, value = "Authorization", f"Bearer {secrets['token']}"
+            elif credential.kind == "shopify":
+                name, value = SHOPIFY_HEADER, secrets["access_token"]
             else:
                 pair = f"{secrets['username']}:{secrets['password']}"
                 name = "Authorization"

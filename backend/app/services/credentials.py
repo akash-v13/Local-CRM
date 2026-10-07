@@ -131,8 +131,8 @@ class CredentialService:
         except CredentialError as exc:
             return TokenTestResult(ok=False, error=str(exc))
         self.session.refresh(credential)
-        if credential.kind not in TOKEN_KINDS:
-            return TokenTestResult(ok=True)
+        if credential.kind not in TOKEN_KINDS or credential.token_ciphertext is None:
+            return TokenTestResult(ok=True)  # a static secret (incl. a Shopify access token)
         token = decrypt_secret(credential.token_ciphertext or "")
         preview = f"{token[:6]}… ({len(token)} characters)" if len(token) > 6 else "••••"
         return TokenTestResult(

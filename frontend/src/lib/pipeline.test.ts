@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ExecutionDetail, PipelineDefinition } from "../api/types";
-import { definitionNodes, executionNodes, shortUrl } from "./pipeline";
+import { definitionNodes, executionNodes, payoutProviders, shortUrl } from "./pipeline";
 
 const step = (key: string, position: number, uses: string[] = []): PipelineDefinition["connectors"][number] => ({
   position, connector_id: `id-${key}`, key, name: key === "shop" ? "Shop orders" : "Shipping", description: null,
@@ -20,6 +20,7 @@ const DEF: PipelineDefinition = {
   compensation_rules: [],
   compensation_guardrails: "",
   payouts: null,
+  shopify: null,
 };
 
 describe("pipeline nodes", () => {
@@ -28,6 +29,19 @@ describe("pipeline nodes", () => {
     expect(nodes.map((n) => n.title)).toEqual(["Case received", "Shop orders", "Shipping", "Routing", "Compensation", "Ready for an agent"]);
     expect(nodes[2].uses).toEqual(["step:shop"]);
     expect(nodes[3].facts).toEqual(["General: every case"]);
+  });
+
+  it("puts the Shopify order lookup first, and lets connectors use it", () => {
+    const nodes = definitionNodes({
+      ...DEF,
+      connectors: [step("shipping", 2, ["shopify"])],
+      shopify: { shop: "x.myshopify.com", order_field: "attributes.orderNumber", match_by_email: true, fields: [] },
+    });
+    expect(nodes.map((n) => [n.title, n.number])).toEqual([
+      ["Case received", undefined], ["Shopify order", 1], ["Shipping", 2], ["Routing", undefined], ["Compensation", undefined], ["Ready for an agent", undefined],
+    ]);
+    expect(nodes[2].uses).toEqual(["step:shopify"]);
+    expect(payoutProviders({ refund: "shopify_refund", voucher: "stripe_voucher" })).toBe("Shopify and Stripe");
   });
 
   it("marks what happened in an execution", () => {

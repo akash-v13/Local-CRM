@@ -88,6 +88,7 @@ Say we want **"reroute a case to another queue"** (Idea 8: manual reroute that p
 | Piece | Where it will go |
 |---|---|
 | Authentication / tenant from token | `api/` dependency replacing the `tenant_id` path parameter |
+| One-click Shopify install | a public Shopify app: OAuth (authorization code grant with expiring offline tokens), mandatory compliance webhooks and App Store review, with the callback in the planned cloud relay (it holds the app secret) |
 | Cash payouts (PayPal / Wise / Tremendous) | another provider next to `app/payouts/stripe.py`; `Payout.provider` and `PayoutMethod` already allow it |
 | Inbox OAuth (Google Workspace, Microsoft 365) | an OAuth credential type for `ImapSmtpTransport` (XOAUTH2) |
 | SLA timers, approvals, AI auto-send | settings already saved on queues; enforcement not built |
@@ -302,9 +303,9 @@ flowchart LR
 | Review | `ReadingService.confirm_field / change_category` | Agents pick the right candidate or apply a suggested category (`reading.field_confirmed`, `case.recategorized`). |
 | Settings | `tenants.reading_settings` | Enabled, channels, read category, min confidence, fields (key, label, description, pattern). |
 
-## 16. Payouts (Stripe)
+## 16. Payouts (Stripe and Shopify)
 
-Issuing **approved** compensation through the business's own Stripe account. Local CRM never holds or moves money itself: it asks Stripe, once per decision, and records the answer.
+Issuing **approved** compensation through the business's own Stripe account or Shopify store (Shopify specifics in §17). Local CRM never holds or moves money itself: it asks Stripe, once per decision, and records the answer.
 
 ```mermaid
 flowchart LR
@@ -323,14 +324,39 @@ flowchart LR
 | Model | `app/models/payout.py`, migration 0009 | One row per attempt round: kind, method, amount, currency, status (queued → processing → succeeded / retrying / failed), `idempotency_key` (unique), Stripe `external_id`, `details` (code, customer, payment_intent, mode), error, attempts. `tenants.payout_settings` holds the settings. |
 | Queueing | `services/payouts.queue_payout` | Called by `CompensationService` when a decision is approved (`decide_for_case`, `review`) and by `PayoutService.pay_now`. Key: `lcrm:{case.id}:{decided_at}`. An existing non-failed payout for the same decision blocks another; after a failure a new round gets `…:retry{n}` (Stripe replays errors for the same key, so a fixed problem needs a new key). |
 | Issuing | `services/payouts.issue_payout_job` | Worker handler. Phase 1 loads and marks processing; phase 2 calls Stripe with no DB session; phase 3 records the result. After a 5xx (outcome unknown) the next attempt first looks for its own object by `metadata[payout_id]`, then uses a new key `…:u{n}`. Retryable errors re-raise so the job queue backs off; others fail the payout. `payout_gave_up` handles a job that ran out of attempts. |
-| Methods | `schemas.ALLOWED_METHODS` | refund → `stripe_refund`; store credit → `stripe_credit` (customer balance, invoices only) or `stripe_voucher`; voucher → `stripe_voucher`; points / replacement → manual. |
+| Methods | `schemas.ALLOWED_METHODS` | refund → `shopify_refund` or `stripe_refund`; store credit → `shopify_credit`, `shopify_discount`, `stripe_credit` (customer balance, invoices only) or `stripe_voucher`; voucher → `shopify_discount` or `stripe_voucher`; points / replacement → manual. `Payout.provider` is `shopify` or `stripe`; the job picks the client from the method. A Stripe credential is only required when a Stripe method is chosen, and Shopify methods need a connected store. |
 | Finding the payment | `PayoutSettingsData` | `payment_field` (a case field holding `pi_…`) first, else search PaymentIntents where `metadata[metadata_key]` = `order_field`. The refund's currency must match the payment's. |
-| On the case | `decisions.compensation.payout` | `{id, status, method, external_id, code, error}`; on success the decision label becomes e.g. "Voucher code SORRY-7KQ2-M9XA worth USD 15.00 (single use, valid until …)", which AI drafts quote. Events: `payout.queued`, `payout.succeeded`, `payout.failed`. |
+| On the case | `decisions.compensation.payout` | `{id, status, method, external_id, code, error}`; on success the decision label becomes e.g. "Voucher code SORRY-7KQ2MX worth USD 15.00 (single use, valid until …)", which AI drafts quote. Events: `payout.queued`, `payout.succeeded`, `payout.failed`. |
 | Local demo | `mocks/shop.py` `/stripe/v1/…` | A fake Stripe (key `sk_test_mock`) with idempotency replay. Docker sets `STRIPE_API_BASE=http://mocks:8100/stripe`; remove it to use real Stripe with a test key. |
 
 Tests: `tests/test_payouts.py` uses a fake Stripe that replays idempotent requests like the real one, and drops the network or returns 429/500 (before or after doing the work) to prove a payout is never made twice.
 
-## 17. API endpoints
+## 17. Shopify
+
+The business's own store: order lookup as enrichment step ①, and refunds / store credit / discount codes as payout methods. Checked against Shopify's Admin GraphQL API **2026-10**.
+
+```mermaid
+flowchart LR
+    Case["New case<br/>(order number, email)"] --> Lookup["① Shopify order<br/>orders(query: name / email)"]
+    Lookup --> Fields["enrichment.shopify.*<br/>daysLate, orderTotal, emailMatches…"]
+    Fields --> Rules["routing + compensation rules"]
+    Rules -- approved --> Payout["issue_payout:<br/>refundCreate / storeCreditAccountCredit /<br/>discountCodeBasicCreate"]
+```
+
+| Piece | Where | Notes |
+|---|---|---|
+| Connecting | credential kind `shopify` (`schemas.ShopifyConfig`, `connectors/auth.py`), `ShopifyService.connect` | Config: `shop` (`….myshopify.com`). Secrets: the Dev Dashboard app's `client_id` + `client_secret`; the **client credentials grant** (`POST https://<shop>/admin/oauth/access_token`) gives a 24-hour token, cached encrypted and refreshed like other token credentials, sent as `X-Shopify-Access-Token`. An `access_token` secret (apps made in the admin before 2026) also works. The client credentials grant only works for an app in the store's own organization, which is why owners create the app themselves today. |
+| API client | `app/shopify/client.py` | Raw HTTP GraphQL, named `Lcrm…` operations. Errors: THROTTLED / 429 / network → retryable; INTERNAL_SERVER_ERROR, 5xx and timeouts after sending → retryable with **outcome unknown**; ACCESS_DENIED (missing scope or protected customer data) and `userErrors` → permanent with Shopify's message. A 401 refreshes the token once. |
+| Order → fields | `app/shopify/orders.py` (pure) | `order_search` ("1001" → `name:"#1001"`, characters that could widen the search are dropped), `same_order_name` (exact match after the search), `order_fields`: the latest fulfilment's tracking and dates, `daysLate` = (delivered or now) − estimated delivery. |
+| Lookup | `services/shopify.lookup_order`, run first by `EnrichmentService.enrich_case` when `tenants.shopify_settings.enabled` | Order number from `order_field` (default `attributes.orderNumber`); else, if `match_by_email`, the customer's latest order. Never falls back from a wrong order number to another order. Adds `emailMatches`. Stored like a connector result under `case.enrichment.shopify` (so `{{enrichment.shopify.x}}` works in later connectors and templates). The connector key `shopify` is reserved. |
+| Issuing | `services/payouts._call_shopify` | `shopify_refund`: picks the order's latest successful SALE/CAPTURE transaction and refunds an amount to it with `@idempotent(key:)`; after an unknown outcome it looks for its own refund by the note "Local CRM case … (payout <id>)" first. `shopify_credit`: `storeCreditAccountCredit` on the customer (no idempotency key, so an unknown outcome is **not** retried: the payout fails asking a person to check Shopify). `shopify_discount`: a single-use fixed-amount code (`usageLimit` 1, customer-only when the order's email matches); codes are unique per store, so a retry finds the code it made by its title. Refunds and store credit require `emailMatches`. |
+| Contact forms | `email/parse.contact_form`, `services/email.ingest_message` | Emails from `*@shopify.com` or with "message from your online store's contact form": the customer comes from Reply-To or the form's Email field, the message from Comment / Body / Message, other fields (e.g. Order number) are appended. Not treated as automatic mail, even when sent "from" the store's own address. |
+| Pipeline view | `services/pipeline.py` | `definition.shopify` and step ① in executions; connectors are numbered from ②. |
+| Local demo | `mocks/shopify.py` | A fake Admin API under `/shopify/<shop>/…` (client `demo-shopify-client` / `demo-shopify-secret`), honouring refund idempotency keys and unique discount codes. Docker sets `SHOPIFY_API_BASE=http://mocks:8100/shopify`. |
+
+Scopes the app needs: `read_orders`, `write_orders`, `read_customers`, `write_store_credit_account_transactions`, `write_discounts` (and `read_all_orders`, approved by Shopify, for orders older than 60 days). Not yet verified against a live store: amount-only refunds via `transactions`, `DiscountCustomersInput.add`, and the store-credit input; `tests/test_shopify.py` runs against the mock, and the first live test should check these.
+
+## 18. API endpoints
 
 Full, always-current reference: http://localhost:8000/docs.
 
@@ -391,6 +417,10 @@ Full, always-current reference: http://localhost:8000/docs.
 | GET, PUT | `/tenants/{t}/payouts/settings` | Payout settings (Stripe credential, method per type, payment lookup, vouchers) |
 | POST | `/tenants/{t}/payouts/check-stripe` | Sign in to Stripe with a credential: valid key? test or live? |
 | GET | `/tenants/{t}/payouts?status=` | Recent payouts, newest first |
+| GET, PUT | `/tenants/{t}/shopify` | Shopify settings, the connected store and the fields a lookup saves |
+| POST | `/tenants/{t}/shopify/connect` | Save the store's domain + app client ID/secret (as a `shopify` credential) and check them |
+| POST | `/tenants/{t}/shopify/check` | Get a token and read the store's name |
+| POST | `/tenants/{t}/shopify/lookup` | Look an order up now (for a case, or an order number / email); saves nothing |
 | GET, POST | `/tenants/{t}/cases/{c}/payouts` | A case's payouts / issue its approved compensation now (or retry after a failure; never pays twice) |
 | GET | `/tenants/{t}/pipeline` | The intake pipeline: steps in order, dependencies, problems, queues, rules |
 | GET | `/tenants/{t}/pipeline/executions?outcome=&limit=` | Recent cases' runs (per-step status, time, queue, compensation) |

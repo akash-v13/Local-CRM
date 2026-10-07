@@ -13,6 +13,7 @@ Endpoints (all JSON):
   /stripe/v1/…                 A tiny fake Stripe (key sk_test_mock): payments for every
                                order (pi_mock_<order>), customers, refunds, balance credits,
                                coupons and promotion codes, with idempotency replay.
+  /shopify/<shop>/admin/…      A tiny fake Shopify Admin API (see mocks/shopify.py).
   GET  /health
 
 Order data is made up but deterministic: the same order number always gives
@@ -32,7 +33,10 @@ from typing import Annotated, Any
 
 from fastapi import FastAPI, Form, Header, HTTPException, Request
 
+from mocks.shopify import router as shopify_router
+
 app = FastAPI(title="Mock shop & shipping API")
+app.include_router(shopify_router)
 
 CLIENT_ID, CLIENT_SECRET = "demo-client", "demo-secret"
 API_KEY = "demo-key"

@@ -32,6 +32,8 @@ Everything here can be done in the browser (**Operations** area) or through the 
 
 ---
 
+> **On Shopify?** You don't need a connector for orders: connect the store under **Operations → Shopify** and every case gets its order as step ① (`enrichment.shopify.*`, see the [Business handbook B10](business-handbook.md#b10-connecting-your-shopify-store)). Connectors after it can use those fields, e.g. `{{enrichment.shopify.trackingNumber}}` for a carrier's API. The connector key `shopify` is reserved.
+
 ## 1. How enrichment works
 
 **What happens to a new case:**
@@ -351,6 +353,6 @@ If you're building or adapting an API for this, these choices make it fast and r
 - [ ] **Conditions** stop calls that can't help (e.g. shipping lookups for non-delivery cases).
 - [ ] Credentials use **read-only** accounts. **Generate token now** works for token types.
 - [ ] Queues and compensation rules that use your fields tested with **Test with a real case** (see the [Business handbook](business-handbook.md), B2 and B4).
-- [ ] Paying through Stripe? Your checkout puts the order number in the Stripe payment's metadata (e.g. `metadata[order_id]`), or a connector returns the PaymentIntent id (`pi_…`) so refunds find the payment ([Business handbook B9](business-handbook.md#b9-payouts-issuing-compensation-through-stripe)).
+- [ ] Paying through Stripe? Your checkout puts the order number in the Stripe payment's metadata (e.g. `metadata[order_id]`), or a connector returns the PaymentIntent id (`pi_…`) so refunds find the payment ([Business handbook B9](business-handbook.md#b9-payouts-issuing-compensation-through-shopify-or-stripe)).
 - [ ] A few test cases submitted, and **Executions** shows ✓ for every step.
 - [ ] Someone knows to check **Executions → Failed** regularly.

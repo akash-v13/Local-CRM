@@ -10,6 +10,9 @@ Pure functions, no I/O:
   actually wrote this time.
 - `case_number_in`: the "[Case 1791…]" token our replies put in the subject,
   a fallback for threading when a mail client drops the In-Reply-To header.
+- `contact_form`: Shopify's "new message from your store's contact form" emails come
+  from Shopify, not the customer. The customer's name, email and message are read
+  from the form (and Reply-To), so the case belongs to the customer.
 """
 
 import hashlib
@@ -34,6 +37,17 @@ class Attachment:
 
 
 @dataclass
+class ContactForm:
+    """A store contact-form submission forwarded by email (e.g. by Shopify)."""
+
+    source: str  # "shopify"
+    email: str
+    name: str | None
+    message: str
+    fields: dict[str, str] = field(default_factory=dict)  # other fields, e.g. Order number
+
+
+@dataclass
 class ParsedEmail:
     message_id: str
     subject: str
@@ -47,6 +61,7 @@ class ParsedEmail:
     text: str
     attachments: list[Attachment] = field(default_factory=list)
     automatic: str | None = None  # why it's automatic (auto-reply, bounce, list…), else None
+    form: ContactForm | None = None  # a contact-form email: the real customer is in here
 
     def thread_ids(self) -> list[str]:
         """Message-IDs this email replies to, most direct first."""
@@ -112,6 +127,52 @@ def _automatic_reason(msg: EmailMessage, from_address: str) -> str | None:
     return None
 
 
+FORM_INTRO = re.compile(r"message from your (online )?store'?s? contact form", re.I)
+FORM_LABEL = re.compile(r"^([A-Za-z][A-Za-z ]{0,40}):\s*(.*)$")
+FORM_MESSAGE_LABELS = {"comment", "body", "message", "your message"}
+FORM_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def contact_form(from_address: str, reply_to: str | None, text: str) -> ContactForm | None:
+    """Read a Shopify contact-form notification. Labels may be followed by the value on
+    the same line ("Name: Jane") or the next one; the message is everything after its
+    label (Comment / Body / Message)."""
+    from_shopify = from_address.endswith(("@shopify.com", ".shopify.com"))
+    if not (from_shopify or FORM_INTRO.search(text)):
+        return None
+    values: dict[str, str] = {}
+    message = ""
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        match = FORM_LABEL.match(lines[i].strip())
+        if match is None:
+            i += 1
+            continue
+        label, value = match.group(1).strip(), match.group(2).strip()
+        if label.lower() in FORM_MESSAGE_LABELS:
+            message = "\n".join([value, *lines[i + 1 :]]).strip()
+            break
+        i += 1
+        if not value:  # the value is on the following line(s), up to a blank line
+            taken: list[str] = []
+            while i < len(lines) and lines[i].strip() and not FORM_LABEL.match(lines[i].strip()):
+                taken.append(lines[i].strip())
+                i += 1
+            value = " ".join(taken)
+        values[label] = value
+    email = (reply_to or "").strip().lower()
+    if not email or email.endswith("shopify.com"):
+        email = values.get("Email", "").strip().lower()
+    if not FORM_EMAIL.match(email):
+        return None
+    name = values.get("Name") or None
+    extra = {
+        k: v for k, v in values.items() if v and k.lower() not in ("name", "email", "country code")
+    }
+    return ContactForm("shopify", email, name, message or "(Empty message)", extra)
+
+
 def _body(msg: EmailMessage) -> str:
     part = msg.get_body(preferencelist=("plain", "html"))
     if part is None:
@@ -150,6 +211,9 @@ def parse_email(raw: bytes, *, fallback_id: str) -> ParsedEmail:
         for part in msg.iter_attachments()
         if isinstance(part, EmailMessage)
     ]
+    text = _body(msg)
+    reply_to = parseaddr(str(msg.get("Reply-To", "")))[1] or None
+    form = contact_form(address, reply_to, text)
     return ParsedEmail(
         message_id=message_id,
         subject=str(msg.get("Subject", "")).strip() or "(no subject)",
@@ -160,9 +224,11 @@ def parse_email(raw: bytes, *, fallback_id: str) -> ParsedEmail:
         date=date,
         in_reply_to=in_reply_to,
         references=MSGID.findall(str(msg.get("References", ""))),
-        text=_body(msg),
+        text=text,
         attachments=attachments,
-        automatic=_automatic_reason(msg, address),
+        # Shopify's form emails come from a no-reply-style sender: they're still customers.
+        automatic=None if form else _automatic_reason(msg, address),
+        form=form,
     )
 
 

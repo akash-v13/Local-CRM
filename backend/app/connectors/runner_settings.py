@@ -14,3 +14,5 @@ class RunSettings:
     max_response_bytes: int
     resolve: Resolver
     sleep: Callable[[float], None] = time.sleep
+    # Shopify stores are reached at https://<shop>; local demos set the mock API instead.
+    shopify_api_base: str = ""

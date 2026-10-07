@@ -17,8 +17,10 @@ class Credential(IdMixin, CreatedAtMixin, Base):
       basic                      secrets: username, password
       oauth2_client_credentials  secrets: client_id, client_secret  config: token_url, scope…
       token_request              secrets: any named values      config: url, body, token_path…
+      shopify                    secrets: client_id, client_secret  config: shop
+                                 (or secrets: access_token, from an app made before 2026)
 
-    For the two token kinds, the generated access token is cached here,
+    For the token kinds, the generated access token is cached here,
     encrypted, with its expiry, so all connectors and workers share one token
     and only refresh it when it's about to expire (app/connectors/auth.py).
 

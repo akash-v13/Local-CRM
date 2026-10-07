@@ -6,7 +6,7 @@ import type { ExecutionOutcome, PipelineDefinition } from "../../api/types";
 import { PipelineDiagram } from "../../components/PipelineDiagram";
 import { useSession } from "../../context/SessionContext";
 import { formatCaseNumber, formatDateTime } from "../../lib/format";
-import { READER_LABELS, STATE_ICONS, STATE_LABELS, definitionNodes, formatDuration, stepId } from "../../lib/pipeline";
+import { READER_LABELS, STATE_ICONS, STATE_LABELS, definitionNodes, formatDuration, payoutProviders, stepId } from "../../lib/pipeline";
 import { METHOD_SHORT } from "../../lib/payouts";
 import { useLoad } from "../../lib/useLoad";
 
@@ -92,6 +92,23 @@ function DefinitionDetail({ definition: d, id }: { definition: PipelineDefinitio
       </>
     );
   }
+  if (id === stepId("shopify") && d.shopify) {
+    return (
+      <>
+        <h2>1. Shopify order</h2>
+        <p className="small">
+          Looks the order up in <strong>{d.shopify.shop}</strong> by <code className="code-inline">{d.shopify.order_field}</code>
+          {d.shopify.match_by_email && <>, or takes the customer's latest order by email when there's no order number</>}. An order
+          number that isn't found is reported, never swapped for another order.
+        </p>
+        <h3 className="lab-subtitle">Saves</h3>
+        <ul className="notes small">
+          {d.shopify.fields.map((f) => <li key={f.key}><code className="code-inline">enrichment.shopify.{f.key}</code> ({f.label})</li>)}
+        </ul>
+        <Link className="button small" to="/ops/shopify">Shopify settings</Link>
+      </>
+    );
+  }
   if (id === "reader" && d.reading) {
     return (
       <>
@@ -137,10 +154,10 @@ function DefinitionDetail({ definition: d, id }: { definition: PipelineDefinitio
         )}
         {d.payouts ? (
           <p className="small">
-            Approved compensation is issued through Stripe {d.payouts.auto_pay ? "automatically" : "when an agent clicks Issue"}:{" "}
-            {Object.entries(d.payouts.methods).map(([type, method]) => `${type.replace("_", " ")} as ${METHOD_SHORT[method].toLowerCase()}`).join(", ")}.
+            Approved compensation is issued through {payoutProviders(d.payouts.methods)} {d.payouts.auto_pay ? "automatically" : "when an agent clicks Issue"}:{" "}
+            {Object.entries(d.payouts.methods).map(([type, method]) => `${type.replace("_", " ")} as ${METHOD_SHORT[method]}`).join(", ")}.
           </p>
-        ) : <p className="muted small">Approved compensation is issued by hand (Stripe payouts are off).</p>}
+        ) : <p className="muted small">Approved compensation is issued by hand (payouts are off).</p>}
         <div className="actions start">
           <Link className="button small secondary" to="/ops/compensation">Manage rules</Link>
           <Link className="button small secondary" to="/ops/payouts">Payouts</Link>

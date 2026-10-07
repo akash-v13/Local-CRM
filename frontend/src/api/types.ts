@@ -355,7 +355,8 @@ export type CredentialKind =
   | "bearer"
   | "basic"
   | "oauth2_client_credentials"
-  | "token_request";
+  | "token_request"
+  | "shopify";
 
 export interface Credential {
   id: string;
@@ -652,7 +653,14 @@ export interface CompensationDecision {
 }
 
 export type PayoutStatus = "queued" | "processing" | "retrying" | "succeeded" | "failed";
-export type PayoutMethod = "stripe_refund" | "stripe_credit" | "stripe_voucher" | "manual";
+export type PayoutMethod =
+  | "stripe_refund"
+  | "stripe_credit"
+  | "stripe_voucher"
+  | "shopify_refund"
+  | "shopify_credit"
+  | "shopify_discount"
+  | "manual";
 
 /** The latest payout for a decision, copied onto decisions.compensation.payout. */
 export interface PayoutSummary {
@@ -690,7 +698,16 @@ export interface Payout {
   currency: string;
   status: PayoutStatus;
   external_id: string | null;
-  details: { code?: string; expires_at?: number; payment_intent?: string; customer?: string; mode?: string } & Record<string, unknown>;
+  details: {
+    code?: string;
+    expires_at?: number;
+    payment_intent?: string;
+    customer?: string;
+    mode?: string;
+    /** Shopify payouts: the store, and the order refunded. */
+    shop?: string;
+    order_id?: string;
+  } & Record<string, unknown>;
   error: string | null;
   attempts: number;
   created_by: string | null;
@@ -774,6 +791,8 @@ export interface PipelineConnectorStep {
 }
 
 export interface PipelineDefinition {
+  /** Step ① when the business's Shopify store is connected. */
+  shopify: { shop: string; order_field: string; match_by_email: boolean; fields: { key: string; label: string }[] } | null;
   reading: {
     channels: string[];
     model: "jev" | "claude" | "patterns";
@@ -933,4 +952,43 @@ export interface ReadingRecord {
   cost_usd: number;
   latency_ms: number;
   read_at: string;
+}
+
+// ----- Shopify ---------------------------------------------------------------------------------
+
+export interface ShopifySettings {
+  enabled: boolean;
+  /** The store's "shopify" credential (domain + app client ID/secret). */
+  credential_id: string | null;
+  /** The case field with the order number, e.g. attributes.orderNumber. */
+  order_field: string;
+  /** No order number on the case: use the customer's latest order, by email. */
+  match_by_email: boolean;
+  /** Shopify emails the customer about refunds and store credit. */
+  notify_customer: boolean;
+  store_credit_expiry_days: number | null;
+}
+
+export interface ShopifyInfo {
+  settings: ShopifySettings;
+  /** The connected store's domain, e.g. northwind.myshopify.com. */
+  shop: string | null;
+  /** Fields a lookup saves as enrichment.shopify.<key>: key → label. */
+  fields: Record<string, string>;
+}
+
+export interface ShopifyCheckResult {
+  ok: boolean;
+  shop_name: string | null;
+  currency: string | null;
+  detail: string;
+}
+
+export interface ShopifyLookupResult {
+  status: "ok" | "failed" | "skipped";
+  fields: Record<string, string | number | boolean>;
+  error: string | null;
+  searched: string[];
+  duration_ms: number | null;
+  admin_url: string | null;
 }

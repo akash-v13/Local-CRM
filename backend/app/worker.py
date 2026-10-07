@@ -13,7 +13,7 @@ Job kinds:
   poll_mailbox    import new emails from a linked inbox (queued by `schedule_polls`)
   send_email      email an agent reply on an email case (retried with backoff)
   read_case       read a new case's message (fields, category), then continue intake
-  issue_payout    issue approved compensation through Stripe (retried with backoff)
+  issue_payout    issue approved compensation through Stripe or Shopify (retried with backoff)
 
 Between jobs the loop also queues inbox polls that are due (every few seconds).
 """
@@ -36,6 +36,7 @@ from app.db import SessionLocal
 from app.email.transport import MailTransport
 from app.models import Job
 from app.security.ssrf import resolve_host
+from app.services.connectors import run_settings
 from app.services.email import poll_mailbox, schedule_polls, send_email_job, transport_from
 from app.services.enrichment import EnrichmentService, claim_job
 from app.services.payouts import issue_payout_job
@@ -59,7 +60,11 @@ def build_handlers(
         "template_test": lambda job_id: execute_test_run(factory, writer, job_id),
         "read_case": lambda job_id: read_case_job(factory, reader, job_id),
         "issue_payout": lambda job_id: issue_payout_job(
-            factory, service.client, service.settings.stripe_api_base, job_id
+            factory,
+            service.client,
+            service.settings.stripe_api_base,
+            job_id,
+            run_settings(service.settings, service.resolve),
         ),
     }
     if mail is not None:
