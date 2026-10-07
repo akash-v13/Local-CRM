@@ -38,6 +38,7 @@ Early, but working end to end on a laptop.
 | Intake pipeline view: diagram of every step a case goes through, plus each case's run (Step Functions–style) | ✅ Built |
 | AI reply drafting: layered Jinja prompt templates, PII masking, test lab across Claude models, cost projections | ✅ Built (needs an Anthropic API key) |
 | Compensation matrix: rules, guardrails (approval threshold, repeat claims), approvals, backtest | ✅ Built |
+| Setup for any platform: "Where do you sell?" (Shopify, marketplaces like SHOP.COM, own website, in store) with a checklist, and one Integrations page | ✅ Built |
 | Shopify: connect a store; every case gets its order (total, delivery, tracking, days late); refunds, store credit and discount codes issued on the store; contact-form emails | ✅ Built (own-store app; one-click App Store install planned) |
 | Payouts: approved compensation issued through the business's own Shopify store or Stripe account, never twice | ✅ Built |
 | One-click Shopify install (public app + cloud relay), cash payouts to customers (PayPal / Wise / Tremendous), Google / Microsoft 365 inbox sign-in (OAuth), storing attachments, SLA timers, AI auto-send, sign-in | 🗓️ Planned |
@@ -77,7 +78,7 @@ Agents see the conversation, case details, enrichment results, queue and history
 → [frontend/README.md](frontend/README.md) (routes and screens)
 
 ### Email channel
-Under **Operations → Email**, a business connects its support inbox with an app password. Gmail, iCloud, Yahoo, Fastmail and Zoho are pre-filled, and any other IMAP/SMTP host works too. Every new email, read or unread, becomes a case. A customer's reply joins its existing case (and reopens it if it was solved). Agent replies on email cases are actually sent from that inbox, in the same email thread. Auto-replies, bounces, mailing lists and the inbox's own mail are skipped, and nothing is imported twice.
+Under **Operations → Integrations → Email inboxes**, a business connects its support inbox with an app password. Gmail, iCloud, Yahoo, Fastmail and Zoho are pre-filled, and any other IMAP/SMTP host works too. Every new email, read or unread, becomes a case. A customer's reply joins its existing case (and reopens it if it was solved). Agent replies on email cases are actually sent from that inbox, in the same email thread. Auto-replies, bounces, mailing lists and the inbox's own mail are skipped, and nothing is imported twice.
 → [Business handbook B7](docs/handbooks/business-handbook.md#b7-connecting-your-email-inbox) · [Codebase guide §14](docs/dev/codebase-guide.md#14-email-channel)
 
 ### Reading messages
@@ -143,8 +144,12 @@ Notes:
 Each business writes its own rules for what a customer gets: a refund, credit, voucher, replacement, points, or nothing. They're checked in priority order and the first match decides. The amount is fixed or a percentage of a case value (e.g. 25% of the order total), with an optional cap. A decision goes to a person for approval when the rule says so, the amount is above the queue's threshold, or the customer was compensated recently. The **backtest** shows what the rules would have decided and cost on recent cases before you switch them on. AI drafts only mention compensation once it's approved.
 → [Codebase guide §12](docs/dev/codebase-guide.md#12-compensation-matrix)
 
+### Setup and integrations (any platform)
+Local CRM isn't tied to one platform. A new business answers **Where do you sell?** (a Shopify store, a marketplace such as SHOP.COM, Amazon or Etsy, its own website, in store) and gets a checklist of next steps, ticked off from what's actually configured. Email is the way in for every platform: a SHOP.COM seller links the inbox on their seller account, and buyers who click *Contact* become cases, with order numbers read out of the messages (switched on automatically). **Operations → Integrations** shows everything that can be connected, grouped as store platforms, messages, payments and the business's own systems, each with its status and what's suggested for where it sells.
+→ [Business handbook §2](docs/handbooks/business-handbook.md#2-getting-started) · [Codebase guide §18](docs/dev/codebase-guide.md#18-setup-and-integrations)
+
 ### Shopify
-Built for small retailers on Shopify. Under **Operations → Shopify** the owner connects their store with the client ID and secret of an app they create in Shopify's Dev Dashboard (guided on the page; the 24-hour access token is generated and refreshed automatically). From then on, step ① of every new case finds its order, by the order number the customer gave or else their latest order by email, and saves the total, payment and fulfilment status, carrier and tracking, delivery dates, **days late**, the customer's order count and spend, and whether the order's email **matches the customer's**. Rules use these directly (e.g. *Late 5+ days and email matches → 30% refund*). An order number that isn't found is reported, never swapped for another order. Approved compensation can be issued on the store: a **refund** to the order's original payment (with Shopify's mandatory idempotency key), **store credit**, or a single-use **discount code**. Shopify contact-form emails become cases for the real customer, not for Shopify's sender.
+For retailers on Shopify (one optional integration among others). Under **Operations → Integrations → Shopify** the owner connects their store with the client ID and secret of an app they create in Shopify's Dev Dashboard (guided on the page; the 24-hour access token is generated and refreshed automatically). From then on, step ① of every new case finds its order, by the order number the customer gave or else their latest order by email, and saves the total, payment and fulfilment status, carrier and tracking, delivery dates, **days late**, the customer's order count and spend, and whether the order's email **matches the customer's**. Rules use these directly (e.g. *Late 5+ days and email matches → 30% refund*). An order number that isn't found is reported, never swapped for another order. Approved compensation can be issued on the store: a **refund** to the order's original payment (with Shopify's mandatory idempotency key), **store credit**, or a single-use **discount code**. Shopify contact-form emails become cases for the real customer, not for Shopify's sender.
 → [Business handbook B10](docs/handbooks/business-handbook.md#b10-connecting-your-shopify-store) · [Codebase guide §17](docs/dev/codebase-guide.md#17-shopify)
 
 ### Payouts (Shopify and Stripe)
@@ -152,7 +157,7 @@ Approved compensation can be issued through the business's **own** Shopify store
 → [Business handbook B9](docs/handbooks/business-handbook.md#b9-payouts-issuing-compensation-through-shopify-or-stripe) · [Codebase guide §16](docs/dev/codebase-guide.md#16-payouts-stripe-and-shopify)
 
 ### Operations Portal
-This is for managers. It has a dashboard (open cases, a queue × status table), the intake pipeline view, and the editors for Shopify, email inboxes, reading, queues, connectors, credentials, compensation rules, payouts, prompt templates and sample cases.
+This is for managers. It has a dashboard (open cases, a queue × status table), the intake pipeline view, and Setup, Integrations (Shopify, email inboxes, connectors, credentials), reading, queues, connectors, credentials, compensation rules, payouts, prompt templates and sample cases.
 
 ---
 
@@ -271,3 +276,4 @@ CI runs all of these on every pull request. To add a feature, follow the worked 
 3. **The model never sees raw personal data.** It's masked before the prompt is built and restored afterwards.
 4. **Everything is auditable.** Every status change, reroute, enrichment and draft is recorded with who did it and why.
 5. **One business can never see another's data.** Every query is scoped to a tenant.
+6. **No platform lock-in.** Email works for every store and marketplace; Shopify, Stripe and connectors are optional integrations on one core, never separate products.

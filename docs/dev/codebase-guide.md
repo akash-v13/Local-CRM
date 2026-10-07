@@ -356,7 +356,19 @@ flowchart LR
 
 Scopes the app needs: `read_orders`, `write_orders`, `read_customers`, `write_store_credit_account_transactions`, `write_discounts` (and `read_all_orders`, approved by Shopify, for orders older than 60 days). Not yet verified against a live store: amount-only refunds via `transactions`, `DiscountCustomersInput.add`, and the store-credit input; `tests/test_shopify.py` runs against the mock, and the first live test should check these.
 
-## 18. API endpoints
+## 18. Setup and integrations
+
+Local CRM is platform-agnostic: email is the universal way in, and store platforms, payment providers and connectors are optional. `services/setup.py` turns that into guidance.
+
+| Piece | Where | Notes |
+|---|---|---|
+| Profile | `tenants.profile` (migration 0011), `schemas.BusinessProfile` | `sells_on`: `shopify`, `marketplace`, `own_site`, `in_store`; `marketplaces` (e.g. SHOP.COM; naming one implies `marketplace`); `completed` (the owner hid the checklist). It only changes what's suggested: nothing is hidden or locked. |
+| Checklist | `steps_for(state)` | Steps per profile (Shopify store, support inbox, reading order numbers, compensation rules, payouts through Shopify, optional Stripe and connectors), each `done` from real settings so it ticks off wherever the work was done. Marketplace-only sellers are told the marketplace holds payments (issue refunds in the seller dashboard). |
+| Defaults | `SetupService.save` | When a profile is saved and reading isn't configured, reading turns on for email with an `orderNumber` field using the `order` preset (`#1001`, `NW-10211` or `104821377`). Never overwrites existing settings; what was switched on is returned in `applied`. |
+| Integrations | `cards_for(state, settings)` | Cards with `status` (connected / needs_attention / not_connected / coming_soon), grouped `store` / `messages` / `payments` / `systems`, `recommended` from the profile. An inbox with a sign-in error is `needs_attention`. |
+| UI | `SetupPage` (+ `SetupBanner` on the dashboard), `IntegrationsPage`, `OpsLayout` | A new business (created in the top bar) opens Setup. Shopify, email inboxes, connectors and credentials are reached from Integrations (the tab stays highlighted on their pages). |
+
+## 19. API endpoints
 
 Full, always-current reference: http://localhost:8000/docs.
 
@@ -417,6 +429,8 @@ Full, always-current reference: http://localhost:8000/docs.
 | GET, PUT | `/tenants/{t}/payouts/settings` | Payout settings (Stripe credential, method per type, payment lookup, vouchers) |
 | POST | `/tenants/{t}/payouts/check-stripe` | Sign in to Stripe with a credential: valid key? test or live? |
 | GET | `/tenants/{t}/payouts?status=` | Recent payouts, newest first |
+| GET, PUT | `/tenants/{t}/setup` | Where the business sells + the setup checklist; saving may switch on reading order numbers (`applied`) |
+| GET | `/tenants/{t}/integrations` | Everything that can be connected, with status and what's suggested |
 | GET, PUT | `/tenants/{t}/shopify` | Shopify settings, the connected store and the fields a lookup saves |
 | POST | `/tenants/{t}/shopify/connect` | Save the store's domain + app client ID/secret (as a `shopify` credential) and check them |
 | POST | `/tenants/{t}/shopify/check` | Get a token and read the store's name |

@@ -124,7 +124,7 @@ Everything except AI drafting works without a key. To turn AI drafting on:
 
 ## Load demo data
 
-With the stack running, create a made-up shop ("Northwind Outfitters") with queues, connectors to the mock API, compensation rules, Stripe payouts (against the fake Stripe), a second business on a fake Shopify store, a persona template, sample cases and cases in different states:
+With the stack running, create a made-up shop ("Northwind Outfitters") with queues, connectors to the mock API, compensation rules, Stripe payouts (against the fake Stripe), a second business on a fake Shopify store, a SHOP.COM seller who has only done Setup, a persona template, sample cases and cases in different states:
 
 ```bash
 cd backend
@@ -159,11 +159,11 @@ Pick the new business in the top bar. The [Business handbook](../handbooks/busin
 
 docker-compose runs a fake shop/shipping API at `http://mocks:8100` (docs: http://localhost:8100/docs).
 
-1. **Operations → Credentials → New credential**:
+1. **Operations → Integrations → Credentials → New credential**:
    - "Shop OAuth": type **OAuth 2.0**, token URL `http://mocks:8100/oauth/token`, client ID `demo-client`, client secret `demo-secret`. Create, then **Generate token now**.
    - "Shipping key": type **API key**, header `X-Api-Key`, key `demo-key`.
 2. Submit a test webform case with order number `ORD-55012` (so there's a case to test with).
-3. **Operations → Connectors → New connector** "Shop orders": URL `http://mocks:8100/orders/` then **Insert field… → Order number**; authentication "Shop OAuth"; **Send test request**; click **Keep** on `total.amount`, `daysLate`, `trackingNumber`; create.
+3. **Operations → Integrations → Your own systems → New connector** "Shop orders": URL `http://mocks:8100/orders/` then **Insert field… → Order number**; authentication "Shop OAuth"; **Send test request**; click **Keep** on `total.amount`, `daysLate`, `trackingNumber`; create.
 4. Submit another webform case. It shows "Enriching…" and a moment later the **Enrichment** card fills in.
 5. A second connector "Shipping" (run order after the first): URL `http://mocks:8100/shipments/` + **Insert field… → Shop orders: trackingNumber**, credential "Shipping key", keep `fault`.
 6. A queue rule like *Shop orders: totalAmount is greater than 500* now routes on enriched data.
@@ -182,7 +182,7 @@ Failure testing: order numbers containing `404`, `500` or `SLOW` make the mock A
 
 The stack includes **GreenMail**, a throwaway mail server (SMTP on `localhost:3025`, IMAP on `localhost:3143`; any address works and any password is accepted).
 
-1. **Operations → Email → Connect inbox**: enter an address such as `support@northwind.example.com`, click **Use the local test mail server (development)**, then **Test connection** and **Connect inbox**.
+1. **Operations → Integrations → Email inboxes → Connect inbox**: enter an address such as `support@northwind.example.com`, click **Use the local test mail server (development)**, then **Test connection** and **Connect inbox**.
 2. Email that address as a customer:
 
    ```bash
@@ -211,7 +211,7 @@ The demo seed script does steps 1–3 for you when GreenMail is running.
 
 docker-compose points payouts at a **fake Stripe** in the mocks service (`STRIPE_API_BASE=http://mocks:8100/stripe`, key `sk_test_mock`). Every order number has a payment (`pi_mock_<order>`, `metadata.order_id=<order>`), every email has a customer, and order numbers containing `404` have no payment. Nothing leaves your machine.
 
-1. **Operations → Credentials → New credential**: type **Bearer token**, name "Stripe (test mode)", token `sk_test_mock`.
+1. **Operations → Integrations → Credentials → New credential**: type **Bearer token**, name "Stripe (test mode)", token `sk_test_mock`.
 2. **Operations → Payouts**: tick **Issue compensation through Stripe**, choose the credential, **Check Stripe** (→ *Connected to Stripe in test mode*), **Save**.
 3. Submit a case that a compensation rule approves (see above), with an order number. A moment later the case's **Compensation** card shows **Issued · Stripe refund · re_mock_…**, and **Recent payouts** lists it.
 4. Use an order number with `404` in it: the payout **fails** with *Couldn't find the Stripe payment…*; fix it, then **Try again**.
@@ -222,7 +222,7 @@ The demo seed script does steps 1–2. To use **real Stripe in test mode**: remo
 
 docker-compose points Shopify at a **fake Shopify** in the mocks service (`SHOPIFY_API_BASE=http://mocks:8100/shopify`). Any `….myshopify.com` domain works; the app's client ID is `demo-shopify-client` and its secret `demo-shopify-secret`. Order numbers like `#1006` exist (with made-up totals, delivery dates and days late); numbers containing `404` don't. Nothing leaves your machine.
 
-1. **Operations → Shopify:** domain `harbor-goods`, client ID and secret as above, **Connect** (→ *Connected to Harbor Goods*).
+1. **Operations → Integrations → Shopify:** domain `harbor-goods`, client ID and secret as above, **Connect** (→ *Connected to Harbor Goods*).
 2. **Test the lookup** with order number `#1006` and email `priya.raman@example.com`: the order is found and *Order email matches* is **Yes**. Try `#1013` with the same email: **No** (it's someone else's order).
 3. Submit a webform case with order number `1006` and that email. Its **Enrichment** card shows the Shopify order, and **Pipeline → Executions** shows step ①.
 4. Add a compensation rule on *Shopify: Days late*, set **Payouts** to the Shopify methods, and submit another case: the refund, store credit or discount code is issued on the fake store.
