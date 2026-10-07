@@ -150,6 +150,38 @@ await shot("test-lab", lab);
 await shot("cost-projection", page.locator(".lab-card").nth(1));
 }
 
+// Email channel: the inbox, its settings, and an email case answered by email.
+await open("/ops/email", "Support inbox");
+await shot("email-inboxes");
+const boxes = await get(`/tenants/${tenant.id}/mailboxes`);
+await open(`/ops/email/${boxes[0].id}`, "What to import");
+await shot("email-inbox-editor", page, { fullPage: true });
+const priya = byName("Priya Patel");
+await open(`/cases/${priya}`, "Conversation");
+if (!(await page.getByText(/✓ Emailed to priya/).count())) {
+  await page.getByPlaceholder("Write a message…").fill(
+    "Hi Priya,\n\nI'm sorry your gift is late. I've asked the carrier to prioritise it and I'll update you as soon as it moves.\n\nBest regards,\nNorthwind Support");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  for (let i = 0; i < 20 && !(await page.getByText(/✓ Emailed to priya/).count()); i++) {
+    await page.waitForTimeout(1000);
+    await page.reload();
+  }
+}
+await page.getByText(/✓ Emailed to priya/).waitFor();
+await shot("email-case", card("Conversation"));
+
+// Reading messages: settings + test, what was read on an email case, and step 0 in its run.
+await open("/ops/reading", "Fields to find");
+// Reading costs a fraction of a cent (Jev ~$0.00004, Claude ~$0.001), so it always runs.
+await page.getByRole("button", { name: "Read it" }).click();
+await page.locator(".reading-result td strong", { hasText: "NW-10211" }).waitFor({ timeout: 60000 });
+await shot("reading-settings", page, { fullPage: true });
+await open(`/cases/${priya}`, "Read from the message");
+await shot("reading-case", card("Read from the message"));
+await open(`/ops/pipeline/executions/${priya}`, "Ready for an agent");
+await page.locator(".flow-node.kind-reader").click();
+await shot("pipeline-execution-reading", page, { fullPage: true });
+
 await open("/ops/samples", "Late gift");
 await shot("samples");
 

@@ -2,9 +2,10 @@
 #   UI (agent console, Operations Portal, test webform): http://localhost:5173
 #   API docs:                                             http://localhost:8000/docs
 #   Mock shop/shipping API (for connector demos):         http://localhost:8100/docs
+#   Test mail server (GreenMail): SMTP localhost:3025, IMAP localhost:3143 (any password)
 #
-# Services: db (Postgres) · api (FastAPI) · worker (background jobs: enrichment)
-#           ui (Vite dev server) · mocks (fake external APIs)
+# Services: db (Postgres) · api (FastAPI) · worker (background jobs: enrichment, email)
+#           ui (Vite dev server) · mocks (fake external APIs) · mail (test mail server)
 
 # Settings shared by the api and the worker.
 x-backend-env: &backend-env
@@ -14,9 +15,14 @@ x-backend-env: &backend-env
   # inside the Docker network. Production uses https and public hosts only.
   CONNECTOR_ALLOWED_HOSTS: mocks
   CONNECTOR_ALLOW_HTTP: "true"
+  # Local development only: let inboxes use the test mail server without TLS.
+  EMAIL_ALLOWED_HOSTS: mail
+  EMAIL_ALLOW_INSECURE: "true"
   # AI reply drafting: taken from your shell (`export ANTHROPIC_API_KEY=...` before
   # `docker compose up`). Empty = drafting off; the UI explains how to turn it on.
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  # Reading customer messages with TypeSafe's Jev (optional; falls back to Claude, then patterns).
+  TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
 
 services:
   db:
@@ -68,6 +74,19 @@ services:
     command: uvicorn mocks.shop:app --host 0.0.0.0 --port 8100 --reload
     volumes:
       - ./backend/mocks:/app/mocks
+
+  mail:
+    # GreenMail: a throwaway SMTP + IMAP server for trying the email channel.
+    # Any address works and any password is accepted; mail is lost on restart.
+    # In the app, link an inbox with host "mail", IMAP 3143 / SMTP 3025, security "none".
+    image: greenmail/standalone:2.1.4
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.smtp -Dgreenmail.setup.test.imap
+        -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled
+    ports:
+      - "3025:3025"  # SMTP
+      - "3143:3143"  # IMAP
 
   ui:
     image: node:24-slim

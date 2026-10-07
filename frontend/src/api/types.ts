@@ -84,11 +84,15 @@ export interface Case {
   /** Per connector key: what happened the last time it ran for this case. */
   enrichment: Record<string, EnrichmentResult>;
   decisions: { compensation?: CompensationDecision } & Record<string, unknown>;
+  /** What was read from the customer's message (empty when reading didn't run). */
+  extraction: ReadingRecord | Record<string, never>;
   queue_id: string | null;
   queue: QueueSummary | null;
   assignee_type: string | null;
   assignee_id: string | null;
   assignment_pinned: boolean;
+  /** Email cases: the inbox they arrived at; replies are sent from it. */
+  mailbox_id: string | null;
   version: number;
   created_at: string;
   updated_at: string;
@@ -103,7 +107,21 @@ export interface Message {
   visibility: "public" | "draft" | "internal";
   body: string;
   ai: Record<string, unknown>;
+  /** Email messages: the Message-ID. */
+  external_id: string | null;
+  /** Email messages: subject, from, to, threading, attachments; outbound mail has `delivery`. */
+  email: EmailDetails;
   created_at: string;
+}
+
+export interface EmailDetails {
+  subject?: string;
+  from?: string;
+  from_name?: string | null;
+  to?: string[];
+  attachments?: { filename: string; content_type: string; size: number }[];
+  mailbox_address?: string;
+  delivery?: { status: "queued" | "retrying" | "sent" | "failed"; attempts?: number; error: string | null; sent_at: string | null };
 }
 
 export interface CaseDetail extends Case {
@@ -696,6 +714,13 @@ export interface PipelineConnectorStep {
 }
 
 export interface PipelineDefinition {
+  reading: {
+    channels: string[];
+    model: "jev" | "claude" | "patterns";
+    fields: { key: string; label: string }[];
+    read_category: boolean;
+    min_confidence: number;
+  } | null;
   connectors: PipelineConnectorStep[];
   inactive_connectors: string[];
   queues: { id: string; name: string; priority: number; conditions: string[]; match: "all" | "any"; ai_drafting: boolean; ai_model: string | null }[];
@@ -734,10 +759,116 @@ export interface ExecutionSummary {
   queue_name: string | null;
   compensation_status: CompensationStatus | null;
   compensation_label: string | null;
+  reading: ReadingRecord | null;
 }
 
 export interface ExecutionDetail extends ExecutionSummary {
   routing: { queue_name: string | null; matched_conditions: string[]; routed_at: string | null };
   compensation: CompensationDecision | null;
   enriched_at: string | null;
+}
+
+// ----- email channel -----
+
+export type MailSecurity = "ssl" | "starttls" | "none";
+export type MailProvider = "gmail" | "icloud" | "yahoo" | "fastmail" | "zoho" | "custom";
+
+export interface MailboxBase {
+  name: string;
+  address: string;
+  display_name: string | null;
+  is_active: boolean;
+  provider: MailProvider;
+  imap_host: string;
+  imap_port: number;
+  imap_security: MailSecurity;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_security: MailSecurity;
+  username: string;
+  folder: string;
+  mark_as_read: boolean;
+  poll_interval_seconds: number;
+  default_category: CategorySelection | null;
+}
+
+export interface MailboxWrite extends MailboxBase {
+  /** Write-only. Required when creating; null keeps the stored one. */
+  password: string | null;
+  /** When creating: also import emails from the last N days. */
+  backfill_days: number;
+}
+
+export interface Mailbox extends MailboxBase {
+  id: string;
+  password_set: boolean;
+  import_since: string;
+  last_checked_at: string | null;
+  last_success_at: string | null;
+  last_error: string | null;
+  imported_total: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MailboxTestResult {
+  imap_ok: boolean;
+  smtp_ok: boolean;
+  imap_detail: string;
+  smtp_detail: string;
+}
+
+export interface MailboxRecentCase {
+  case_number: number;
+  created_at: string;
+  status: CaseStatus;
+  customer_email: string;
+  subject: string | null;
+}
+
+// ----- reading messages -----
+
+export type ReadingChannel = "email" | "webform" | "chat" | "api";
+
+export interface ReadingField {
+  key: string;
+  label: string;
+  description: string;
+  pattern: string;
+}
+
+export interface ReadingSettings {
+  enabled: boolean;
+  channels: ReadingChannel[];
+  read_category: boolean;
+  min_confidence: number;
+  fields: ReadingField[];
+}
+
+export interface ReadingInfo {
+  settings: ReadingSettings;
+  reader: "jev" | "claude" | "patterns" | string;
+  presets: { id: string; pattern: string; description: string }[];
+}
+
+export interface ReadFieldResult {
+  key: string;
+  label: string;
+  status: "found" | "not_found" | "needs_review" | "provided";
+  value: string | null;
+  confidence: number | null;
+  candidates: string[];
+  reviewed_by: string | null;
+}
+
+export interface ReadingRecord {
+  status: "ok" | "failed" | "patterns_only";
+  model: string;
+  error: string | null;
+  fields: ReadFieldResult[];
+  category: { value: CategorySelection | null; label: string; confidence: number; confident: boolean; applied: boolean } | null;
+  input_tokens: number;
+  cost_usd: number;
+  latency_ms: number;
+  read_at: string;
 }

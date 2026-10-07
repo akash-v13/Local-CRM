@@ -13,6 +13,7 @@ from app.models.connector import Connector
 from app.models.credential import Credential
 from app.models.customer import Customer
 from app.models.job import Job
+from app.models.mailbox import Mailbox
 from app.models.message import Message
 from app.models.prompt_template import (
     PromptTemplate,
@@ -32,6 +33,7 @@ __all__ = [
     "Credential",
     "Customer",
     "Job",
+    "Mailbox",
     "Message",
     "Queue",
     "PromptTemplate",

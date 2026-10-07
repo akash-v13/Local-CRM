@@ -28,6 +28,8 @@ Early, but working end to end on a laptop.
 | Area | State |
 |---|---|
 | Case intake (API + test webform), lifecycle, replies, internal notes, audit trail | ✅ Built |
+| Email channel: link an inbox (IMAP/SMTP + app password); emails become cases, replies thread into their case, agent replies are emailed | ✅ Built |
+| Reading messages: order numbers and other fields pulled out of emails, category chosen from tone and context (Jev, Claude fallback) | ✅ Built |
 | Queue routing (rule builder, priorities, live "which queue?" test), manual reroute | ✅ Built |
 | Operations Portal: dashboard, queues, connectors, credentials, prompt templates, sample cases | ✅ Built |
 | Enrichment: connectors to any HTTP API, shared credentials (API key, bearer, basic, OAuth 2.0, generated tokens), background worker | ✅ Built |
@@ -35,7 +37,7 @@ Early, but working end to end on a laptop.
 | AI reply drafting: layered Jinja prompt templates, PII masking, test lab across Claude models, cost projections | ✅ Built (needs an Anthropic API key) |
 | Compensation matrix: rules, guardrails (approval threshold, repeat claims), approvals, backtest | ✅ Built |
 | Payouts (actually issuing compensation) | ⏭️ Next |
-| Real email / channel connectors, SLA timers, approvals, AI auto-send, sign-in | 🗓️ Planned |
+| Google / Microsoft 365 inbox sign-in (OAuth), storing attachments, SLA timers, AI auto-send, sign-in | 🗓️ Planned |
 
 ---
 
@@ -70,6 +72,14 @@ Cases are identified by a **case number**, which is the creation time in Unix mi
 ### Cases and the agent console
 Agents see the conversation, case details, enrichment results, queue and history. From there they can reply, add internal notes, change status, reroute, or draft with AI. The test webform stands in for a business's website contact form.
 → [frontend/README.md](frontend/README.md) (routes and screens)
+
+### Email channel
+Under **Operations → Email**, a business connects its support inbox with an app password. Gmail, iCloud, Yahoo, Fastmail and Zoho are pre-filled, and any other IMAP/SMTP host works too. Every new email, read or unread, becomes a case. A customer's reply joins its existing case (and reopens it if it was solved). Agent replies on email cases are actually sent from that inbox, in the same email thread. Auto-replies, bounces, mailing lists and the inbox's own mail are skipped, and nothing is imported twice.
+→ [Business handbook B7](docs/handbooks/business-handbook.md#b7-connecting-your-email-inbox) · [Codebase guide §14](docs/dev/codebase-guide.md#14-email-channel)
+
+### Reading messages
+Before the API steps run, step ⓪ reads the customer's message. Code finds **candidates** for each field the business defines (e.g. anything shaped like an order number), and a model **chooses** the right one: "which is the order they're writing about now?". It also picks the category from the tone and context. Confident answers are saved on the case, so the shop lookup, routing, compensation and AI drafts work on email cases. Uncertain ones wait for an agent to confirm. The reader is **Jev** (TypeSafe AI's decision model) when `TYPESAFE_API_KEY` is set, otherwise Claude Haiku. Measured on Jev: about $0.00004 and 0.15–0.3 s per message. In testing it picked the current order over older ones mentioned in the same email, and ignored an email that tried to steer it. Neither can return a value that isn't in the message.
+→ [Business handbook B8](docs/handbooks/business-handbook.md#b8-reading-messages) · [Codebase guide §15](docs/dev/codebase-guide.md#15-reading-messages)
 
 ### Queue routing
 Queues are checked in priority order, and the first one whose conditions match gets the case. Conditions can use case fields, custom attributes and enrichment data (e.g. *category is Delivery* and *orderTotal greater than 500*). The queue editor shows live which queue a real case would land in.
@@ -142,7 +152,7 @@ This is for managers. It has a dashboard (open cases, a queue × status table), 
 | API | Python 3.12, FastAPI, Pydantic, SQLAlchemy 2, Alembic |
 | Database | Postgres 17 (JSONB for flexible per-business data) |
 | Background work | Worker process using a Postgres job queue (`FOR UPDATE SKIP LOCKED`) |
-| AI | Anthropic Claude (Haiku 4.5, Sonnet 5, Opus 5) via the official SDK; Jinja2 sandbox for templates |
+| AI | Anthropic Claude (Haiku 4.5, Sonnet 5, Opus 5) via the official SDK; Jinja2 sandbox for templates; TypeSafe Jev for reading messages |
 | UI | React 19, TypeScript, Vite, React Router |
 | Local stack | Docker Compose |
 | CI | GitHub Actions: lint, strict types and tests for backend and frontend, migrations against real Postgres |
@@ -157,6 +167,7 @@ The backend is layered: **api → services → domain / repositories → models*
 | `api` | FastAPI (applies migrations on start) | 8000 (`/docs` for interactive API docs) |
 | `worker` | Background jobs: enrichment, test-lab runs | – |
 | `mocks` | Fake shop/shipping API for demos | 8100 |
+| `mail` | Test mail server (GreenMail) for the email channel | SMTP 3025, IMAP 3143 |
 | `ui` | React app | 5173 |
 
 **Repository layout**

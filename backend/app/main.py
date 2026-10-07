@@ -13,8 +13,10 @@ from app.api import (
     connectors,
     credentials,
     health,
+    mailboxes,
     pipeline,
     queues,
+    reading,
     replies,
     reports,
     tenants,
@@ -50,6 +52,10 @@ app.include_router(replies.models_router)
 app.include_router(compensation.router)
 app.include_router(compensation.case_router)
 app.include_router(pipeline.router)
+app.include_router(mailboxes.router)
+app.include_router(mailboxes.case_router)
+app.include_router(reading.router)
+app.include_router(reading.case_router)
 
 
 # Map domain errors (raised by services) to HTTP responses in one place.

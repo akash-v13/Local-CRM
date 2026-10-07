@@ -6,7 +6,7 @@ import type { ExecutionDetail } from "../../api/types";
 import { PipelineDiagram } from "../../components/PipelineDiagram";
 import { useSession } from "../../context/SessionContext";
 import { formatCaseNumber, formatDateTime, parseCaseNumber } from "../../lib/format";
-import { STATE_LABELS, executionNodes, formatDuration, stepId } from "../../lib/pipeline";
+import { readerLabel, STATE_LABELS, executionNodes, formatDuration, stepId } from "../../lib/pipeline";
 import { useLoad } from "../../lib/useLoad";
 import { PipelineTabs } from "./PipelinePage";
 
@@ -86,6 +86,34 @@ function ExecutionDetailPanel({ execution: e, id }: { execution: ExecutionDetail
           </dl>
         )}
         {step.missing.length > 0 && <p className="muted small">Not in the response: {step.missing.join(", ")}</p>}
+      </>
+    );
+  }
+  if (id === "reader") {
+    const r = e.reading;
+    return (
+      <>
+        <h2>0. Read the message</h2>
+        {!r ? <p className="muted small">Reading didn't run for this case.</p> : (
+          <>
+            <p className="small"><strong>{readerLabel(r.model)}</strong> · {r.status.replace("_", " ")}
+              {r.latency_ms > 0 && ` · ${formatDuration(r.latency_ms)}`}{r.cost_usd > 0 && ` · $${r.cost_usd.toFixed(5)}`}</p>
+            {r.error && <p className="error small">{r.error}</p>}
+            <dl className="kv-list">
+              {r.fields.map((f) => (
+                <div key={f.key} style={{ display: "contents" }}>
+                  <dt>{f.key}</dt>
+                  <dd>
+                    {f.value ?? "—"} <span className="muted">· {f.status.replace("_", " ")}
+                      {f.confidence !== null && ` · ${Math.round(f.confidence * 100)}%`}
+                      {f.candidates.length > 0 && ` · candidates: ${f.candidates.join(", ")}`}</span>
+                  </dd>
+                </div>
+              ))}
+              {r.category && (<><dt>category</dt><dd>{r.category.label} <span className="muted">· {Math.round(r.category.confidence * 100)}%{r.category.applied ? " · applied" : " · suggested"}</span></dd></>)}
+            </dl>
+          </>
+        )}
       </>
     );
   }

@@ -11,9 +11,15 @@ function describe(event: CaseEvent): string {
       return `${from} → ${to}`;
     }
     case "message.sent":
-      return "Reply sent (simulated)";
+      return event.data.delivery === "email"
+        ? `Reply queued to email ${String(event.data.to ?? "the customer")}`
+        : "Reply sent (simulated)";
     case "message.received":
       return "Customer replied";
+    case "email.sent":
+      return `Email delivered to ${Array.isArray(event.data.to) ? event.data.to.join(", ") : "the customer"}`;
+    case "email.failed":
+      return "Email couldn't be sent";
     case "note.added":
       return "Internal note added";
     case "case.routed":

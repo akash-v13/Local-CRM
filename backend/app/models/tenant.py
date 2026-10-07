@@ -15,3 +15,5 @@ class Tenant(IdMixin, CreatedAtMixin, Base):
     # Compensation guardrails (repeat-claimant check, default currency); see
     # app/domain/compensation.py `Settings`. Empty = defaults.
     compensation_settings: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    # Reading incoming messages (fields to pull out, category); see app/services/reading.py.
+    reading_settings: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)

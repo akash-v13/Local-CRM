@@ -58,6 +58,8 @@ class Case(IdMixin, CreatedAtMixin, Base):
     sla: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
     enrichment: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
     decisions: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+    # What was read from the customer's message (fields, category, model, confidence).
+    extraction: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
 
     # Assignment — who/where the case currently is. History is in case_events.
     queue_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("queues.id", ondelete="SET NULL"))
@@ -65,6 +67,10 @@ class Case(IdMixin, CreatedAtMixin, Base):
     assignee_type: Mapped[str | None] = mapped_column(String(16))  # human | ai
     assignee_id: Mapped[str | None] = mapped_column(String(100))
     assignment_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Cases that came in by email: the inbox they arrived at (replies are sent from it).
+    mailbox_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("mailboxes.id", ondelete="SET NULL")
+    )
 
     version: Mapped[int] = mapped_column(Integer)
 

@@ -1,6 +1,6 @@
 import { STATE_ICONS, STATE_LABELS, formatDuration, type FlowNode } from "../lib/pipeline";
 
-const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
+const CIRCLED = ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
 
 interface Props {
   nodes: FlowNode[];
@@ -33,7 +33,7 @@ export function PipelineDiagram({ nodes, selectedId, onSelect }: Props) {
             onClick={() => onSelect(n.id)}
           >
             <span className="flow-head">
-              {n.number !== undefined && <span className="flow-number" aria-hidden>{CIRCLED[n.number - 1] ?? n.number}</span>}
+              {n.number !== undefined && <span className="flow-number" aria-hidden>{CIRCLED[n.number] ?? n.number}</span>}
               <strong>{n.title}</strong>
               {n.state && (
                 <span className="flow-state">
@@ -49,7 +49,7 @@ export function PipelineDiagram({ nodes, selectedId, onSelect }: Props) {
                 Uses data from{" "}
                 {n.uses.map((id, i) => {
                   const dep = names.get(id);
-                  return <span key={id}>{i > 0 && ", "}{dep?.number !== undefined ? `${CIRCLED[dep.number - 1]} ` : ""}{dep?.title ?? id}</span>;
+                  return <span key={id}>{i > 0 && ", "}{dep?.number !== undefined ? `${CIRCLED[dep.number]} ` : ""}{dep?.title ?? id}</span>;
                 })}
               </span>
             )}

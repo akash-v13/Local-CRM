@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 
 import { api } from "../api/client";
 import { CompensationCard } from "../components/CompensationCard";
+import { ReadingCard } from "../components/ReadingCard";
 import { EnrichmentCard } from "../components/EnrichmentCard";
 import { EventTimeline } from "../components/EventTimeline";
 import { NeedsTenant } from "../components/Layout";
@@ -73,7 +74,8 @@ export function CaseDetailPage() {
   const customerName = c.customer.display_name ?? c.customer.email;
   const selected = c.category.customerSelected;
   const effective = c.category.effective;
-  const attributes = Object.entries(c.attributes);
+  // The email subject is shown in the header instead.
+  const attributes = Object.entries(c.attributes).filter(([key]) => key !== "subject");
 
   return (
     <section>
@@ -85,6 +87,7 @@ export function CaseDetailPage() {
           <h1>
             Case <code>{formatCaseNumber(c.case_number)}</code> <StatusBadge status={c.status} />
           </h1>
+          {typeof c.attributes.subject === "string" && <p className="case-subject">{c.attributes.subject}</p>}
           <p className="muted">
             {formatCategory(effective)} · {c.queue?.name ?? "unrouted"} · via {c.channel} · opened{" "}
             {formatDateTime(c.created_at)}
@@ -96,7 +99,11 @@ export function CaseDetailPage() {
         <div className="case-main">
           <div className="card">
             <h2>Conversation</h2>
-            <MessageThread messages={c.messages} customerName={customerName} />
+            <MessageThread
+              messages={c.messages}
+              customerName={customerName}
+              onRetry={(m) => void api.retrySend(c.tenant_id, c.case_number, m.id).then(refresh, () => refresh())}
+            />
           </div>
           <ReplyComposer caseDetail={c} agentId={agentId} onSent={refresh} />
         </div>
@@ -137,6 +144,13 @@ export function CaseDetailPage() {
               <dd>{c.version}</dd>
             </dl>
           </div>
+
+          {"fields" in c.extraction && (
+            <div className="card">
+              <h2>Read from the message</h2>
+              <ReadingCard caseDetail={c} agentId={agentId} onChanged={refresh} />
+            </div>
+          )}
 
           <div className="card">
             <h2>Enrichment</h2>

@@ -115,7 +115,7 @@ Placeholders `{{…}}` work in the URL, headers and body. They're filled in for 
 | `{{case.language}}` | The case language |
 | `{{case.category.type}}`, `.category`, `.subcategory` | What the customer picked |
 | `{{case.customer.email}}`, `.display_name`, `.tier` | The customer |
-| `{{case.attributes.<field>}}` | Any field from your webform or intake API, e.g. `orderNumber` |
+| `{{case.attributes.<field>}}` | Any field from your webform or intake API, e.g. `orderNumber`, or one **read from the message** (Operations → Reading) for channels like email |
 | `{{enrichment.<key>.<field>}}` | A field saved by an **earlier** step ([§7](#7-chaining-steps)) |
 
 **Rules:**

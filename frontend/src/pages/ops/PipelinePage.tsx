@@ -6,7 +6,7 @@ import type { ExecutionOutcome, PipelineDefinition } from "../../api/types";
 import { PipelineDiagram } from "../../components/PipelineDiagram";
 import { useSession } from "../../context/SessionContext";
 import { formatCaseNumber, formatDateTime } from "../../lib/format";
-import { STATE_ICONS, STATE_LABELS, definitionNodes, formatDuration, stepId } from "../../lib/pipeline";
+import { READER_LABELS, STATE_ICONS, STATE_LABELS, definitionNodes, formatDuration, stepId } from "../../lib/pipeline";
 import { useLoad } from "../../lib/useLoad";
 
 /** The two views share a header: the pipeline (default) and its executions. */
@@ -88,6 +88,23 @@ function DefinitionDetail({ definition: d, id }: { definition: PipelineDefinitio
           </ul>
         )}
         <Link className="button small" to={`/ops/connectors/${connector.connector_id}`}>Edit connector</Link>
+      </>
+    );
+  }
+  if (id === "reader" && d.reading) {
+    return (
+      <>
+        <h2>0. Read the message</h2>
+        <p className="small">
+          Reads {d.reading.channels.join(", ")} cases with <strong>{READER_LABELS[d.reading.model] ?? d.reading.model}</strong>:
+          finds candidates for each field by pattern, then the model chooses the right one. Values it's at least{" "}
+          {Math.round(d.reading.min_confidence * 100)}% sure of are saved on the case, so the steps below can use them.
+        </p>
+        <ul className="notes small">
+          {d.reading.fields.map((f) => <li key={f.key}><code className="code-inline">attributes.{f.key}</code> ({f.label})</li>)}
+          {d.reading.read_category && <li>Category, when the customer didn't choose one</li>}
+        </ul>
+        <Link className="button small" to="/ops/reading">Edit reading</Link>
       </>
     );
   }
