@@ -1,0 +1,27 @@
+[project]
+name = "local-crm-relay"
+version = "0.1.0"
+description = "Local CRM's cloud relay on AWS: infrastructure (CDK) and Lambda handlers."
+requires-python = ">=3.12"
+dependencies = [
+    "aws-cdk-lib>=2.200",
+    "constructs>=10.4",
+    "cdk-nag>=2.36",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.12", "mypy>=1.17"]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true

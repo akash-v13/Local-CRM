@@ -198,14 +198,14 @@ Each item is a reviewable piece of work, in roughly this order:
 
 | # | Change | Where | Notes |
 |---|---|---|---|
-| 1 | Database-neutral migrations | `backend/alembic/versions/` | Replace `postgresql.JSONB` with a JSON type that maps to JSONB on Postgres and JSON on SQLite (`JSONType` already does this in the models); CI runs migrations on both. |
+| 1 | ✅ Database-neutral migrations | `backend/alembic/versions/`, `app/db_types.py` | Done (#14): `JSON_DOC` / `EMPTY_JSON` instead of `JSONB` / `'{}'::jsonb`, batch mode for table changes; Postgres schema unchanged (verified with `pg_dump`); `tests/test_migrations.py` runs the round trip on SQLite. |
 | 2 | SQLite job claiming | `repositories.py` (`JobRepository.claim`) | `UPDATE jobs SET status='running' … WHERE id = (SELECT … LIMIT 1) RETURNING id` on SQLite; `SKIP LOCKED` stays on Postgres. |
 | 3 | Single-process runner | new `app/desktop.py` | Starts the API on 127.0.0.1 with the worker in a thread; serves `frontend/dist`. |
 | 4 | Secrets key from the keychain | `security/secrets.py`, `config.py` | `keyring` on the desktop, the env var on servers. |
 | 5 | Local sign-in | API middleware + UI | App passcode / OS biometrics; the actor on events becomes the owner. |
 | 6 | Relay client | new `services/relay.py`, worker job `pull_relay` | Device key pair, pairing, pickup, open sealed messages, create cases idempotently, acknowledge. |
 | 7 | AI through the proxy | `ai/drafter.py`, `ai/readers.py` | Base URL + device token instead of API keys; the proxy returns the same response shapes. |
-| 8 | The relay itself | new `relay/` (Lambdas + infrastructure as code) | Intake, pickup, AI proxy, accounts; tests with moto / LocalStack. |
+| 8 | The relay itself | `relay/` (Lambdas + AWS CDK in Python) | Started: a `/health` walking skeleton with the GitHub OIDC deploy role and CI/CD ([relay/README.md](../../relay/README.md)). Next: intake, pickup, AI proxy, accounts; tests with moto / LocalStack. |
 | 9 | Webform for stores' sites | `relay/` + a small embeddable script | Posts to `/intake/{store}`; replaces the test webform for real stores. |
 | 10 | Packaging | new `desktop/` (Tauri), CI release workflow | PyInstaller sidecar, signed installers, updater manifest, nightly backups. |
 | 11 | Billing and onboarding | relay accounts + Stripe Billing | Sign up, subscribe, pair the first device, then the in-app Setup. |

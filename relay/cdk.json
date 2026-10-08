@@ -1,0 +1,9 @@
+{
+  "app": "uv run python app.py",
+  "context": {
+    "github_repo": "akash-v13/Local-CRM",
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/core:target-partitions": ["aws"]
+  }
+}
