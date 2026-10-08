@@ -8,22 +8,20 @@ Create Date: 2026-10-07
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 from alembic import op
+from app.db_types import EMPTY_JSON, JSON_DOC
 
 revision: str = "0011"
 down_revision: str | None = "0010"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-JSONB = postgresql.JSONB(astext_type=sa.Text())
-
 
 def upgrade() -> None:
     op.add_column(
         "tenants",
-        sa.Column("profile", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column("profile", JSON_DOC, nullable=False, server_default=EMPTY_JSON),
     )
 
 

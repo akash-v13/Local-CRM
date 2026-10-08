@@ -8,9 +8,9 @@ Create Date: 2026-10-01
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 from alembic import op
+from app.db_types import JSON_DOC
 
 revision: str = "0004"
 down_revision: str | None = "0003"
@@ -25,7 +25,7 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.Uuid(), nullable=False),
         sa.Column("name", sa.String(length=200), nullable=False),
         sa.Column("kind", sa.String(length=32), nullable=False),
-        sa.Column("config", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("config", JSON_DOC, nullable=False),
         sa.Column("secrets_ciphertext", sa.Text(), nullable=True),
         sa.Column("token_ciphertext", sa.Text(), nullable=True),
         sa.Column("token_expires_at", sa.DateTime(timezone=True), nullable=True),
@@ -55,13 +55,13 @@ def upgrade() -> None:
         sa.Column("required", sa.Boolean(), nullable=False),
         sa.Column("method", sa.String(length=8), nullable=False),
         sa.Column("url_template", sa.Text(), nullable=False),
-        sa.Column("headers", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("headers", JSON_DOC, nullable=False),
         sa.Column("body_template", sa.Text(), nullable=True),
         sa.Column("credential_id", sa.Uuid(), nullable=True),
         sa.Column("timeout_seconds", sa.Float(), nullable=False),
         sa.Column("max_retries", sa.Integer(), nullable=False),
-        sa.Column("run_when", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("field_mappings", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("run_when", JSON_DOC, nullable=False),
+        sa.Column("field_mappings", JSON_DOC, nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
@@ -88,7 +88,7 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.Uuid(), nullable=False),
         sa.Column("kind", sa.String(length=40), nullable=False),
         sa.Column("case_id", sa.Uuid(), nullable=True),
-        sa.Column("payload", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("payload", JSON_DOC, nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("attempts", sa.Integer(), nullable=False),
         sa.Column("max_attempts", sa.Integer(), nullable=False),

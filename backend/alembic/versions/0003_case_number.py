@@ -36,17 +36,24 @@ def upgrade() -> None:
     updates = []
     previous = 0
     for case_id, created_at in rows:
+        if isinstance(created_at, str):  # SQLite returns raw text from a plain SELECT
+            created_at = datetime.fromisoformat(created_at)
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC)
         micros = (created_at - EPOCH) // timedelta(microseconds=1)
         previous = max(micros, previous + 1)
         updates.append({"id": case_id, "n": previous})
     if updates:
         connection.execute(sa.text("UPDATE cases SET case_number = :n WHERE id = :id"), updates)
 
-    # 3. Now every row has one: require it and enforce uniqueness.
-    op.alter_column("cases", "case_number", nullable=False)
-    op.create_unique_constraint(op.f("uq_cases_case_number"), "cases", ["case_number"])
+    # 3. Now every row has one: require it and enforce uniqueness. (Batch mode: SQLite
+    #    can't alter columns or add constraints in place, so it rebuilds the table.)
+    with op.batch_alter_table("cases") as batch:
+        batch.alter_column("case_number", existing_type=sa.BigInteger(), nullable=False)
+        batch.create_unique_constraint(op.f("uq_cases_case_number"), ["case_number"])
 
 
 def downgrade() -> None:
-    op.drop_constraint(op.f("uq_cases_case_number"), "cases", type_="unique")
-    op.drop_column("cases", "case_number")
+    with op.batch_alter_table("cases") as batch:
+        batch.drop_constraint(op.f("uq_cases_case_number"), type_="unique")
+        batch.drop_column("case_number")

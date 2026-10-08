@@ -8,16 +8,14 @@ Create Date: 2026-10-07
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 from alembic import op
+from app.db_types import EMPTY_JSON, JSON_DOC
 
 revision: str = "0009"
 down_revision: str | None = "0008"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-JSONB = postgresql.JSONB(astext_type=sa.Text())
 
 
 def upgrade() -> None:
@@ -34,7 +32,7 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("idempotency_key", sa.String(length=255), nullable=False),
         sa.Column("external_id", sa.String(length=255), nullable=True),
-        sa.Column("details", JSONB, nullable=False),
+        sa.Column("details", JSON_DOC, nullable=False),
         sa.Column("error", sa.Text(), nullable=True),
         sa.Column("attempts", sa.Integer(), nullable=False),
         sa.Column("created_by", sa.String(length=100), nullable=True),
@@ -49,7 +47,7 @@ def upgrade() -> None:
     op.create_index("ix_payouts_tenant_created", "payouts", ["tenant_id", "created_at"])
     op.add_column(
         "tenants",
-        sa.Column("payout_settings", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column("payout_settings", JSON_DOC, nullable=False, server_default=EMPTY_JSON),
     )
 
 

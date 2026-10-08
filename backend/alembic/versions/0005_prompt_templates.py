@@ -12,16 +12,14 @@ Create Date: 2026-10-01
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 from alembic import op
+from app.db_types import JSON_DOC
 
 revision: str = "0005"
 down_revision: str | None = "0004"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-JSONB = postgresql.JSONB(astext_type=sa.Text())
 
 
 def upgrade() -> None:
@@ -51,8 +49,8 @@ def upgrade() -> None:
         sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("source", sa.Text(), nullable=False),
         sa.Column("max_words", sa.Integer(), nullable=True),
-        sa.Column("must_include", JSONB, nullable=False),
-        sa.Column("must_not_include", JSONB, nullable=False),
+        sa.Column("must_include", JSON_DOC, nullable=False),
+        sa.Column("must_not_include", JSON_DOC, nullable=False),
         sa.Column("created_by", sa.String(length=100), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
@@ -72,11 +70,11 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.Uuid(), nullable=False),
         sa.Column("name", sa.String(length=200), nullable=False),
         sa.Column("channel", sa.String(length=32), nullable=False),
-        sa.Column("category", JSONB, nullable=False),
+        sa.Column("category", JSON_DOC, nullable=False),
         sa.Column("customer_name", sa.String(length=200), nullable=True),
         sa.Column("customer_tier", sa.String(length=50), nullable=True),
         sa.Column("queue_name", sa.String(length=200), nullable=True),
-        sa.Column("facts", JSONB, nullable=False),
+        sa.Column("facts", JSON_DOC, nullable=False),
         sa.Column("message", sa.Text(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -94,10 +92,10 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("tenant_id", sa.Uuid(), nullable=False),
         sa.Column("template_name", sa.String(length=200), nullable=True),
-        sa.Column("config", JSONB, nullable=False),
+        sa.Column("config", JSON_DOC, nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("total_calls", sa.Integer(), nullable=False),
-        sa.Column("results", JSONB, nullable=False),
+        sa.Column("results", JSON_DOC, nullable=False),
         sa.Column("estimated_cost_usd", sa.Float(), nullable=False),
         sa.Column("actual_cost_usd", sa.Float(), nullable=False),
         sa.Column("error", sa.Text(), nullable=True),
