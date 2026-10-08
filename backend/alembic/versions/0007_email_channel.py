@@ -8,16 +8,14 @@ Create Date: 2026-10-07
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 from alembic import op
+from app.db_types import EMPTY_JSON, JSON_DOC
 
 revision: str = "0007"
 down_revision: str | None = "0006"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
-
-JSONB = postgresql.JSONB(astext_type=sa.Text())
 
 
 def upgrade() -> None:
@@ -42,7 +40,7 @@ def upgrade() -> None:
         sa.Column("import_since", sa.DateTime(timezone=True), nullable=False),
         sa.Column("mark_as_read", sa.Boolean(), nullable=False),
         sa.Column("poll_interval_seconds", sa.Integer(), nullable=False),
-        sa.Column("default_category", JSONB, nullable=True),
+        sa.Column("default_category", JSON_DOC, nullable=True),
         sa.Column("uid_validity", sa.BigInteger(), nullable=True),
         sa.Column("last_uid", sa.BigInteger(), nullable=True),
         sa.Column("last_checked_at", sa.DateTime(timezone=True), nullable=True),
@@ -58,20 +56,23 @@ def upgrade() -> None:
     op.add_column("messages", sa.Column("external_id", sa.String(length=998), nullable=True))
     op.add_column(
         "messages",
-        sa.Column("email", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column("email", JSON_DOC, nullable=False, server_default=EMPTY_JSON),
     )
     op.create_index(
         "uq_messages_tenant_external_id", "messages", ["tenant_id", "external_id"], unique=True
     )
-    op.add_column("cases", sa.Column("mailbox_id", sa.Uuid(), nullable=True))
-    op.create_foreign_key(
-        "fk_cases_mailbox_id", "cases", "mailboxes", ["mailbox_id"], ["id"], ondelete="SET NULL"
-    )
+    # Batch mode: SQLite can't add a foreign key in place, so it rebuilds the table.
+    with op.batch_alter_table("cases") as batch:
+        batch.add_column(sa.Column("mailbox_id", sa.Uuid(), nullable=True))
+        batch.create_foreign_key(
+            "fk_cases_mailbox_id", "mailboxes", ["mailbox_id"], ["id"], ondelete="SET NULL"
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_cases_mailbox_id", "cases", type_="foreignkey")
-    op.drop_column("cases", "mailbox_id")
+    with op.batch_alter_table("cases") as batch:
+        batch.drop_constraint("fk_cases_mailbox_id", type_="foreignkey")
+        batch.drop_column("mailbox_id")
     op.drop_index("uq_messages_tenant_external_id", table_name="messages")
     op.drop_column("messages", "email")
     op.drop_column("messages", "external_id")

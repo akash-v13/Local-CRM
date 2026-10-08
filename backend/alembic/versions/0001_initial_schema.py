@@ -8,9 +8,9 @@ Create Date: 2026-09-28
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 from alembic import op
+from app.db_types import JSON_DOC
 
 revision: str = "0001"
 down_revision: str | None = None
@@ -34,7 +34,7 @@ def upgrade() -> None:
         sa.Column("email", sa.String(length=320), nullable=False),
         sa.Column("display_name", sa.String(length=200), nullable=True),
         sa.Column("tier", sa.String(length=50), nullable=True),
-        sa.Column("identity_links", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("identity_links", JSON_DOC, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
             ["tenant_id"],
@@ -54,8 +54,8 @@ def upgrade() -> None:
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("priority", sa.Integer(), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False),
-        sa.Column("match_criteria", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("settings", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("match_criteria", JSON_DOC, nullable=False),
+        sa.Column("settings", JSON_DOC, nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
@@ -80,12 +80,12 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("channel", sa.String(length=32), nullable=False),
         sa.Column("language", sa.String(length=16), nullable=False),
-        sa.Column("category", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("attributes", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("flags", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("sla", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("enrichment", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("decisions", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("category", JSON_DOC, nullable=False),
+        sa.Column("attributes", JSON_DOC, nullable=False),
+        sa.Column("flags", JSON_DOC, nullable=False),
+        sa.Column("sla", JSON_DOC, nullable=False),
+        sa.Column("enrichment", JSON_DOC, nullable=False),
+        sa.Column("decisions", JSON_DOC, nullable=False),
         sa.Column("queue_id", sa.Uuid(), nullable=True),
         sa.Column("assignee_type", sa.String(length=16), nullable=True),
         sa.Column("assignee_id", sa.String(length=100), nullable=True),
@@ -125,7 +125,7 @@ def upgrade() -> None:
         sa.Column("author_id", sa.String(length=100), nullable=True),
         sa.Column("visibility", sa.String(length=16), nullable=False),
         sa.Column("body", sa.Text(), nullable=False),
-        sa.Column("ai", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("ai", JSON_DOC, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
             ["case_id"],
@@ -154,7 +154,7 @@ def upgrade() -> None:
         sa.Column("actor_type", sa.String(length=16), nullable=False),
         sa.Column("actor_id", sa.String(length=100), nullable=True),
         sa.Column("reason", sa.Text(), nullable=True),
-        sa.Column("data", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("data", JSON_DOC, nullable=False),
         sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
             ["case_id"],

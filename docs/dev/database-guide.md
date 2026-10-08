@@ -85,6 +85,17 @@ uv run alembic upgrade head
 uv run alembic check
 ```
 
+### Migrations must work on Postgres *and* SQLite
+
+The server and Docker setups use Postgres; the desktop app (v1, [architecture-v1.md](architecture-v1.md)) uses SQLite, one file on the owner's machine. Every migration runs on both:
+
+- **JSON columns:** use `JSON_DOC` from `app/db_types.py` (JSONB on Postgres, JSON on SQLite), never `postgresql.JSONB`. A default of `{}` is `server_default=EMPTY_JSON`, never `'{}'::jsonb`.
+- **Changing an existing table** (alter a column, add or drop a constraint or foreign key): wrap it in `with op.batch_alter_table("table") as batch:`. SQLite can't do these in place, so batch mode rebuilds the table there; on Postgres it runs the normal `ALTER`s. Autogenerate writes batch operations for you when run against SQLite.
+- **Data migrations:** a plain `SELECT` returns datetimes as text on SQLite; parse them (see `0003_case_number.py`).
+- **Tests:** `tests/test_migrations.py` upgrades, checks for drift, downgrades and upgrades again on SQLite, including an upgrade over existing data. CI's "Migrations (real Postgres)" job does the same on Postgres.
+
+To try a migration on SQLite by hand: `DATABASE_URL=sqlite:///./scratch.db uv run alembic upgrade head`.
+
 ### Useful commands
 
 | Command | Does |
@@ -97,9 +108,9 @@ uv run alembic check
 
 ### Rules
 
-- **Never edit a migration that has run anywhere except your own laptop.** Write a new one instead.
+- **Never edit a migration that has run anywhere except your own laptop.** Write a new one instead. (The one exception so far: in October 2026 every migration was made SQLite-compatible without changing what it does on Postgres, verified by comparing `pg_dump --schema-only` before and after.)
 - **Never change production tables by hand.** Everything goes through a migration.
-- Migrations target **Postgres only** (they use JSONB). Tests don't run migrations; they build tables from the models on SQLite.
+- Migrations run on **Postgres and SQLite** (see above). Most tests build tables from the models on SQLite; `tests/test_migrations.py` runs the migrations themselves.
 
 ## 5. Transactions
 

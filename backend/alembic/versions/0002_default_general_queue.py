@@ -14,9 +14,9 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 from alembic import op
+from app.db_types import JSON_DOC
 
 revision: str = "0002"
 down_revision: str | None = "0001"
@@ -44,8 +44,8 @@ queues = sa.table(
     sa.column("description", sa.Text()),
     sa.column("priority", sa.Integer()),
     sa.column("is_active", sa.Boolean()),
-    sa.column("match_criteria", postgresql.JSONB()),
-    sa.column("settings", postgresql.JSONB()),
+    sa.column("match_criteria", JSON_DOC),
+    sa.column("settings", JSON_DOC),
     sa.column("created_at", sa.DateTime(timezone=True)),
     sa.column("updated_at", sa.DateTime(timezone=True)),
 )
