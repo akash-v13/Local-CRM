@@ -25,7 +25,7 @@ P.S This is a part of the work being done by Akash Venkatesan, Pranav Iyer, and 
 
 ## 1. Status
 
-Early, but working end to end on a laptop.
+Early, but working end to end on a laptop. The v1 target, a desktop app with a thin cloud relay, is described in [docs/dev/architecture-v1.md](docs/dev/architecture-v1.md).
 
 | Area | State |
 |---|---|
@@ -260,6 +260,7 @@ CI runs all of these on every pull request. To add a feature, follow the worked 
 | [**Business handbook**](docs/handbooks/business-handbook.md) | Agents, team leads, managers | How to use every feature, with screenshots; recipes; troubleshooting |
 | [**Integration guide**](docs/handbooks/integration-guide.md) | A business's own engineers | Connecting their APIs: request templates, authentication, picking fields, chaining steps, failures, executions, API automation, security, checklist |
 | [**Developer handbook**](docs/handbooks/developer-handbook.md) | New engineers | Day-one setup with demo data, how a case flows through the code, feature map, rules, recipes, first week |
+| [**docs/dev/architecture-v1.md**](docs/dev/architecture-v1.md) | Engineers, technical due diligence | The v1 target: desktop app (Tauri + SQLite) with a thin AWS relay; decisions, data flows, security model, costs, and the work to get there |
 | [docs/dev/local-setup.md](docs/dev/local-setup.md) | Anyone running it | Docker and non-Docker setup, walkthroughs, AI key, troubleshooting |
 | [docs/dev/codebase-guide.md](docs/dev/codebase-guide.md) | Developers | Layers, request walkthrough, conventions, routing / enrichment / AI / compensation internals, full API endpoint list |
 | [docs/dev/database-guide.md](docs/dev/database-guide.md) | Developers | Tables today, columns vs JSON, migrations, transactions, locking (written for document-database developers) |
