@@ -37,7 +37,7 @@ Owner-run small retailers: on Shopify, on marketplaces like SHOP.COM, on their o
 | D1 | How owners install it | **Desktop app** (Mac and Windows), built with [Tauri](https://tauri.app) | The only thing a shop owner will actually install; signed installers and automatic updates | Docker for pilots (needs hands-on support); hosted first (cost, and holds customer data) |
 | D2 | Database on the owner's machine | **SQLite**, one file | Nothing to run, trivial backups, enough for one user; the test suite already runs on SQLite | Embedded Postgres (bigger install, a background server on a laptop) |
 | D3 | Who pays for AI | **Included**: AI calls go through a metered proxy in our cloud, with our keys | Owners never handle API keys; a key shipped inside a desktop app could be extracted | Bring your own key (a hurdle for owners); both (later, for volume customers) |
-| D4 | Where the relay runs | **AWS serverless** (API Gateway, Lambda, DynamoDB, S3, SES) | The founder knows AWS well; cost is about the same as Cloudflare at our scale (free tier covers early use) | Cloudflare Workers (slightly cheaper and simpler at scale); one small server (we'd operate it) |
+| D4 | Where the relay runs | **AWS serverless** (CloudFront + WAF, API Gateway, Lambda, DynamoDB, S3, SES) | The founder knows AWS well; cost is about the same as Cloudflare at our scale (free tier covers early use) | Cloudflare Workers (slightly cheaper and simpler at scale); one small server (we'd operate it) |
 | D5 | Email | **Stays on the desktop** (IMAP/SMTP from the owner's machine, as today) | The mailbox already stores mail while the laptop is closed; no customer email passes through us | Reading mail in the cloud (would hold customer data, needs OAuth app review) |
 | D6 | Voice | **Not in v1** | Small retailers don't want an AI voice yet; costed for later | Higgs Realtime + Twilio, about $0.023 per call-minute |
 
@@ -110,7 +110,7 @@ Serverless, so there's nothing to patch and it scales to zero.
 
 | Piece | AWS service | Job |
 |---|---|---|
-| Public API | API Gateway (HTTP API) + WAF rate limits | `/intake/{store}`, `/pickup`, `/ack`, `/ai/*`, `/account/*` |
+| Public API | CloudFront + AWS WAF in front of API Gateway (HTTP API) | `/intake/{store}`, `/pickup`, `/ack`, `/ai/*`, `/account/*`. WAF can't attach to an HTTP API directly, so CloudFront carries the rate limits and bot rules. |
 | Intake | Lambda | Validate the webform (captcha, size limits), seal it to the store's public key, store it, queue the acknowledgement |
 | Waiting messages | DynamoDB `relay_messages` (pk = install, sk = message id, **TTL 14 days**) | Sealed messages until collected; deleted on acknowledgement |
 | Attachments | S3 `relay-attachments` (sealed objects, lifecycle 14 days) | Photos customers attach to the webform |
