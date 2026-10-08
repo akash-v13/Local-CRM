@@ -1,0 +1,98 @@
+# The cloud relay (relay/, AWS CDK). See relay/README.md.
+#   check        on every PR and push touching relay/: lint, types, tests, synth with
+#                AWS security checks (cdk-nag) for dev and prod. Needs no AWS access.
+#   deploy-dev   on a push to main touching relay/, once AWS_DEV_ROLE_ARN is set.
+#   deploy-prod  by hand (Actions → Relay → Run workflow), through the "prod" GitHub
+#                environment, which asks you to approve.
+# AWS access is a short-lived OIDC role per run: no AWS keys are stored in GitHub.
+name: Relay
+
+on:
+  pull_request:
+    paths: ["relay/**", ".github/workflows/relay.yml"]
+  push:
+    branches: [main]
+    paths: ["relay/**", ".github/workflows/relay.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: relay-${{ github.ref }}
+  cancel-in-progress: false  # never cut a deploy off half-way
+
+env:
+  CDK: npx --yes aws-cdk@2
+
+jobs:
+  check:
+    name: Relay (lint, types, tests, synth)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: relay/uv.lock
+      - run: uv sync --frozen
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy app.py relay_infra handlers tests
+      - run: uv run pytest -q
+      - name: Synth dev and prod (fails on any unacknowledged security finding)
+        run: |
+          $CDK synth -c stage=dev -q
+          $CDK synth -c stage=prod -q
+
+  deploy-dev:
+    name: Deploy relay (dev)
+    needs: check
+    if: github.event_name == 'push' && vars.AWS_DEV_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # to get the OIDC token AWS trusts
+      contents: read
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEV_ROLE_ARN }}
+          aws-region: us-east-1
+      - run: $CDK deploy LocalCrmRelay-dev -c stage=dev --require-approval never
+
+  deploy-prod:
+    name: Deploy relay (prod)
+    needs: check
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod  # GitHub asks a required reviewer (you) to approve
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PROD_ROLE_ARN }}
+          aws-region: us-east-1
+      - run: $CDK deploy LocalCrmRelay-prod -c stage=prod --require-approval never
