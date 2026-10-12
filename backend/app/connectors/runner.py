@@ -22,6 +22,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -49,6 +50,8 @@ class _Request:
     headers: dict[str, str]
     body: str | None
     secret_headers: set[str] = field(default_factory=set)
+    # Secret query parameters (an API key in the URL): sent, never shown.
+    secret_params: dict[str, str] = field(default_factory=dict)
 
     def with_auth(self, auth: AppliedAuth) -> "_Request":
         return _Request(
@@ -57,12 +60,17 @@ class _Request:
             {**self.headers, **auth.headers},
             self.body,
             self.secret_headers | auth.secret_header_names,
+            {**self.secret_params, **auth.params},
         )
 
     def preview(self) -> RequestPreview:
+        url = self.url
+        if self.secret_params:  # show where the key goes, not the key
+            masked = "&".join(f"{quote(k, safe='')}={MASK}" for k in self.secret_params)
+            url = f"{url}{'&' if '?' in url else '?'}{masked}"
         return RequestPreview(
             method=self.method,
-            url=self.url,
+            url=url,
             headers={k: MASK if k in self.secret_headers else v for k, v in self.headers.items()},
             body=self.body,
         )
@@ -107,9 +115,13 @@ def _send(
     for attempt in range(1, attempts + 1):
         sent = _Sent()
         try:
+            # Secret query parameters are added to the URL's own query only here, when sending.
+            url = httpx.URL(request.url)
+            if request.secret_params:
+                url = url.copy_merge_params(request.secret_params)
             with client.stream(
                 request.method,
-                request.url,
+                url,
                 headers=request.headers,
                 content=request.body,
                 timeout=config.timeout_seconds,

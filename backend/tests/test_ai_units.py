@@ -338,3 +338,11 @@ class TestUnsupportedCommitments:
             assert unsupported_commitments(
                 text, "", compensation=None, flagged=False, customer_text=""
             ), text
+
+
+def test_masker_keeps_identifiers_but_masks_real_phones() -> None:
+    masker = Masker("Dana Whitfield", "dana@example.com", keep=["104821377", "#1006"])
+    text = masker.mask("Order 104821377 and #1006. Dana: 415-555-0137, dana@example.com")
+    assert "104821377" in text and "#1006" in text
+    assert "415-555-0137" not in text and "dana@example.com" not in text
+    assert unmask(text, masker.mapping).endswith("415-555-0137, dana@example.com")

@@ -12,6 +12,7 @@ from tests.conftest import FakeApis
 from tests.connector_helpers import (
     SHOP_CONNECTOR,
     create_connector,
+    create_credential,
     shop_api,
     shop_api_key_credential_id,
 )
@@ -176,3 +177,50 @@ def test_oversized_responses_are_refused(
     result = run_test(client, tenant_id, case["case_number"])
     assert result["status"] == "failed"
     assert "larger than" in result["error"]
+
+
+def test_api_key_as_a_query_parameter_is_sent_but_never_shown(
+    client: TestClient, tenant_id: str, fake_apis: FakeApis
+) -> None:
+    """SerpApi-style auth: ?api_key=… in the URL. Masked wherever the request is stored."""
+    seen: list[httpx.Request] = []
+
+    def serp(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.params.get("api_key") != "serp-secret":
+            return httpx.Response(401, json={"error": "Invalid API key"})
+        return httpx.Response(
+            200, json={"shopping_results": [{"title": "Ceramic vase", "extracted_price": 49.0}]}
+        )
+
+    fake_apis.handler = serp
+    credential = create_credential(
+        client,
+        tenant_id,
+        name="SerpApi",
+        config={"location": "query", "param_name": "api_key"},
+        secrets={"key": "serp-secret"},
+    )
+    case = create_case(client, tenant_id)
+    result = run_test(
+        client,
+        tenant_id,
+        case["case_number"],
+        key="serp",
+        name="Price check",
+        url_template="https://serpapi.com/search.json?engine=google_shopping&q={{case.attributes.orderNumber}}",
+        credential_id=credential["id"],
+        field_mappings=[{"path": "shopping_results.0.extracted_price", "target": "marketPrice"}],
+    )
+    assert result["status"] == "ok", result
+    assert result["data"] == {"marketPrice": 49.0}
+    assert result["request"]["url"] == (
+        "https://serpapi.com/search.json?engine=google_shopping&q=ORD-55012&api_key=••••"
+    )
+    assert "serp-secret" not in str(result)
+    sent = seen[-1].url
+    assert (sent.params["engine"], sent.params["q"], sent.params["api_key"]) == (
+        "google_shopping",
+        "ORD-55012",
+        "serp-secret",
+    )

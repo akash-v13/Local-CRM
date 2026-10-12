@@ -568,7 +568,12 @@ REQUIRED_SECRETS: dict[str, tuple[str, ...]] = {
 
 
 class ApiKeyConfig(BaseModel):
+    """A key sent on every request: in a header (most APIs) or as a URL query parameter
+    (e.g. SerpApi's `?api_key=`). Either way it's masked in every stored request preview."""
+
+    location: Literal["header", "query"] = "header"
     header_name: str = Field(default="X-Api-Key", pattern=HEADER_NAME)
+    param_name: str = Field(default="api_key", pattern=r"^[A-Za-z0-9_.\-]{1,64}$")
 
 
 class EmptyConfig(BaseModel):

@@ -114,7 +114,10 @@ def read_message(
     )
 
     # The model sees the message with personal details masked, and only the candidates.
-    masker = Masker(customer_name, customer_email)
+    # Candidates are never masked: a 9-digit order number looks like a phone number.
+    masker = Masker(
+        customer_name, customer_email, keep=[c.value for cs in found.values() for c in cs]
+    )
     masked_subject, masked_text = masker.mask(subject), masker.mask(text)
     option_ids: dict[str, dict[str, str]] = {
         f.key: {f"c{i + 1}": c.value for i, c in enumerate(found[f.key])} for f in fields
