@@ -238,6 +238,29 @@ def test_the_model_never_sees_personal_details() -> None:
     )
 
 
+def test_long_order_numbers_reach_the_model_unmasked() -> None:
+    """A 9-digit order number matches the phone pattern; as a candidate it must not be
+    masked (the model would see "order [PHONE_1]"), while real phone numbers still are."""
+    reader = FakeReader(choose={"orderNumber": "104821377"})
+    order_field = {**ORDER_FIELD, "pattern": PATTERN_PRESETS["order"][0]}
+    settings = ReadingSettingsData(enabled=True, fields=[order_field])
+    reading = read_message(
+        reader,
+        settings,
+        subject="Broken lamp, order 104821377",
+        text="It arrived cracked. Older order 103990214 was fine. Call me on 415-555-0137.",
+        customer_name="Dana Whitfield",
+        customer_email="dana@example.com",
+    )
+    sent = reader.requests[0]
+    assert "order 104821377" in sent.subject and "order 103990214" in sent.text
+    assert "415-555-0137" not in sent.text and "[PHONE_1]" in sent.text
+    options = " ".join(sent.fields[0].options.values())
+    assert "«104821377»" in options and "«103990214»" in options  # values intact in context
+    assert "415-555-0137" not in options  # a real phone nearby is still masked
+    assert reading.fields[0].value == "104821377"
+
+
 # ----- intake ------------------------------------------------------------------------------
 
 SETTINGS = {

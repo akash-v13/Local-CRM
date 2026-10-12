@@ -15,6 +15,7 @@ replace it later behind the same functions.
 """
 
 import re
+from collections.abc import Collection
 from dataclasses import dataclass, field
 
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
@@ -41,7 +42,15 @@ class Masked:
 class Masker:
     """Masks several texts consistently (the same value always gets the same placeholder)."""
 
-    def __init__(self, customer_name: str | None, customer_email: str | None) -> None:
+    def __init__(
+        self,
+        customer_name: str | None,
+        customer_email: str | None,
+        keep: Collection[str] = (),
+    ) -> None:
+        """`keep`: values that look like personal data but aren't, e.g. a 9-digit order
+        number (which the phone pattern would otherwise mask). Never masked."""
+        self.keep = {k.strip() for k in keep if k and k.strip()}
         self.mapping: dict[str, str] = {}
         self._reverse: dict[str, str] = {}
         self._counters: dict[str, int] = {}
@@ -78,12 +87,22 @@ class Masker:
                 text = re.sub(rf"(?<!\w){re.escape(value)}(?!\w)", placeholder, text, flags=re.I)
                 self.mapping[placeholder] = value
         text = EMAIL.sub(lambda m: self._placeholder("EMAIL", m.group()), text)
-        text = CARD.sub(lambda m: self._placeholder("CARD", m.group()), text)
+        text = CARD.sub(
+            lambda m: m.group() if self._kept(m.group()) else self._placeholder("CARD", m.group()),
+            text,
+        )
         text = PHONE.sub(
-            lambda m: self._placeholder("PHONE", m.group()) if _is_phone(m.group()) else m.group(),
+            lambda m: (
+                self._placeholder("PHONE", m.group())
+                if _is_phone(m.group()) and not self._kept(m.group())
+                else m.group()
+            ),
             text,
         )
         return text
+
+    def _kept(self, value: str) -> bool:
+        return value.strip().lstrip("#") in self.keep or value.strip() in self.keep
 
 
 def unmask(text: str, mapping: dict[str, str]) -> str:

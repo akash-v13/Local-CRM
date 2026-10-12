@@ -7,6 +7,7 @@ The drafting pipeline (also used by the template test lab and preview):
         ──► unmask ──► checks + warnings ──► DraftInfo
 """
 
+import re
 import uuid
 from collections.abc import Mapping, Sequence
 from statistics import mean
@@ -174,6 +175,21 @@ def draft_input_from_sample(sample: SampleCase) -> DraftInput:
 # ----- the pipeline -------------------------------------------------------------------------
 
 
+IDENTIFIER_KEY = re.compile(r"order|tracking|invoice|sku|reference|case", re.I)
+
+
+def identifiers(draft_input: DraftInput) -> list[str]:
+    """Order, tracking, invoice… numbers in the case's fields: not personal data, so the
+    model sees them as they are (a long order number would otherwise look like a phone)."""
+    values: list[str] = []
+    sources = [draft_input.attributes, *draft_input.enrichment.values()]
+    for source in sources:
+        for key, value in (source or {}).items():
+            if IDENTIFIER_KEY.search(str(key)) and isinstance(value, str | int):
+                values.append(str(value))
+    return values
+
+
 def prepare(
     templates: Mapping[str, StoredTemplate],
     business_name: str,
@@ -181,7 +197,9 @@ def prepare(
     pinned: str | None = None,
 ) -> tuple[BuiltPrompt, Masker]:
     """Mask the input and render the layered prompt. Raises TemplateError."""
-    masker = Masker(draft_input.customer_name, draft_input.customer_email)
+    masker = Masker(
+        draft_input.customer_name, draft_input.customer_email, keep=identifiers(draft_input)
+    )
     context = build_context(business_name, draft_input, masker)
     return build_prompt(templates, context, pinned), masker
 
