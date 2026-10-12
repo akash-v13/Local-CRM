@@ -53,6 +53,8 @@ class AppliedAuth:
     headers: dict[str, str]
     secret_header_names: set[str] = field(default_factory=set)
     refreshable: bool = False  # True for generated tokens: retry once with a new one on 401
+    # Keys some APIs want in the URL (e.g. ?api_key=…); masked in request previews.
+    params: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -245,6 +247,8 @@ class AuthProvider:
     @staticmethod
     def _static(credential: Credential, secrets: dict[str, str]) -> AppliedAuth:
         try:
+            if credential.kind == "api_key" and credential.config.get("location") == "query":
+                return AppliedAuth({}, params={credential.config["param_name"]: secrets["key"]})
             if credential.kind == "api_key":
                 name, value = credential.config["header_name"], secrets["key"]
             elif credential.kind == "bearer":

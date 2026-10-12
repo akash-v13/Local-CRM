@@ -37,6 +37,7 @@ DEMO_OWNERS = {
     "#1020": "marco.rossi@example.com",
     "#1023": "jin.park@example.com",
     "#1013": "owen.hart@example.com",
+    "#1008": "priya.raman@example.com",  # a second complaint: the repeat-claim guardrail
 }
 
 _tokens: dict[str, float] = {}
@@ -129,7 +130,12 @@ def _search(query: str) -> list[dict[str, Any]]:
     field, _, value = query.partition(":")
     value = value.strip().strip('"')
     if field == "name":
-        return [] if not value.lstrip("#") or "404" in value else [_order(value)]
+        digits = value.lstrip("#")
+        # Shopify-style numbers (#1001) exist; long marketplace numbers (SHOP.COM's
+        # 104821377) and anything with 404 in it don't.
+        if not digits or "404" in value or (digits.isdigit() and len(digits) > 6):
+            return []
+        return [_order(value)]
     if field == "email":
         names = [n for n, e in _state["owners"].items() if e == value.lower()]
         return [_order(n) for n in sorted(names, reverse=True)[:1]]
@@ -176,11 +182,8 @@ async def graphql(
     body = await request.json()
     op, v = body.get("operationName"), body.get("variables") or {}
     if op == "LcrmShop":
-        return {
-            "data": {
-                "shop": {"name": "Harbor Goods", "currencyCode": "USD", "myshopifyDomain": shop}
-            }
-        }
+        name = shop.split(".")[0].replace("-", " ").title()  # brightwater-home → Brightwater Home
+        return {"data": {"shop": {"name": name, "currencyCode": "USD", "myshopifyDomain": shop}}}
     if op == "LcrmOrders":
         found = _search(v.get("query", ""))[: v.get("first", 5)]
         return {"data": {"orders": {"nodes": [_public(o) for o in found]}}}

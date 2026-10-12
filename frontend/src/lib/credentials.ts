@@ -32,9 +32,22 @@ export const CREDENTIAL_TYPES: CredentialType[] = [
   {
     kind: "api_key",
     label: "API key",
-    summary: "A key sent in a header on every request, e.g. X-Api-Key: …",
+    summary: "A key sent on every request: in a header (e.g. X-Api-Key: …) or in the URL (e.g. SerpApi's ?api_key=…). Never shown in saved requests.",
     generatesToken: false,
-    config: [{ name: "header_name", label: "Header name", type: "text", defaultValue: "X-Api-Key", required: true }],
+    config: [
+      {
+        name: "location",
+        label: "Send it as",
+        type: "select",
+        defaultValue: "header",
+        options: [
+          { value: "header", label: "A header (most APIs)" },
+          { value: "query", label: "A URL parameter (e.g. SerpApi)" },
+        ],
+      },
+      { name: "header_name", label: "Header name", type: "text", defaultValue: "X-Api-Key", required: true, showWhen: { field: "location", values: ["header"] } },
+      { name: "param_name", label: "URL parameter name", type: "text", defaultValue: "api_key", required: true, showWhen: { field: "location", values: ["query"] } },
+    ],
     secrets: [{ name: "key", label: "API key" }],
   },
   {
@@ -149,7 +162,7 @@ export function credentialType(kind: CredentialKind): CredentialType {
 export function credentialDetail(kind: CredentialKind, config: Record<string, unknown>): string {
   switch (kind) {
     case "api_key":
-      return `Header ${String(config.header_name ?? "")}`;
+      return config.location === "query" ? `URL parameter ${String(config.param_name ?? "")}` : `Header ${String(config.header_name ?? "")}`;
     case "oauth2_client_credentials":
       return String(config.token_url ?? "");
     case "token_request":
